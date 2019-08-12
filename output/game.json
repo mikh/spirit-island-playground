@@ -1,0 +1,131 @@
+{
+    "boards": {
+        "A": {
+            "board_letter": "A",
+            "lands": {
+                "0": {
+                    "connected_lands": [
+                        1,
+                        2,
+                        3
+                    ],
+                    "land_type": "OCEAN",
+                    "num_blight": 0,
+                    "num_cities": 0,
+                    "num_dahan": 0,
+                    "num_towns": 0,
+                    "number": 0
+                },
+                "1": {
+                    "connected_lands": [
+                        0,
+                        2,
+                        4,
+                        5,
+                        6
+                    ],
+                    "land_type": "MOUNTAIN",
+                    "num_blight": 0,
+                    "num_cities": 0,
+                    "num_dahan": 0,
+                    "num_towns": 0,
+                    "number": 1
+                },
+                "2": {
+                    "connected_lands": [
+                        0,
+                        1,
+                        3,
+                        4
+                    ],
+                    "land_type": "WETLANDS",
+                    "num_blight": 0,
+                    "num_cities": 1,
+                    "num_dahan": 1,
+                    "num_towns": 0,
+                    "number": 2
+                },
+                "3": {
+                    "connected_lands": [
+                        0,
+                        2,
+                        4
+                    ],
+                    "land_type": "JUNGLE",
+                    "num_blight": 0,
+                    "num_cities": 0,
+                    "num_dahan": 2,
+                    "num_towns": 0,
+                    "number": 3
+                },
+                "4": {
+                    "connected_lands": [
+                        1,
+                        2,
+                        3,
+                        5
+                    ],
+                    "land_type": "SANDS",
+                    "num_blight": 1,
+                    "num_cities": 0,
+                    "num_dahan": 0,
+                    "num_towns": 0,
+                    "number": 4
+                },
+                "5": {
+                    "connected_lands": [
+                        1,
+                        4,
+                        6,
+                        7,
+                        8
+                    ],
+                    "land_type": "WETLANDS",
+                    "num_blight": 0,
+                    "num_cities": 0,
+                    "num_dahan": 0,
+                    "num_towns": 0,
+                    "number": 5
+                },
+                "6": {
+                    "connected_lands": [
+                        1,
+                        5,
+                        8
+                    ],
+                    "land_type": "MOUNTAIN",
+                    "num_blight": 0,
+                    "num_cities": 0,
+                    "num_dahan": 1,
+                    "num_towns": 0,
+                    "number": 6
+                },
+                "7": {
+                    "connected_lands": [
+                        5,
+                        8
+                    ],
+                    "land_type": "SANDS",
+                    "num_blight": 0,
+                    "num_cities": 0,
+                    "num_dahan": 2,
+                    "num_towns": 0,
+                    "number": 7
+                },
+                "8": {
+                    "connected_lands": [
+                        5,
+                        6,
+                        7
+                    ],
+                    "land_type": "JUNGLE",
+                    "num_blight": 0,
+                    "num_cities": 0,
+                    "num_dahan": 0,
+                    "num_towns": 1,
+                    "number": 8
+                }
+            }
+        }
+    }
+}

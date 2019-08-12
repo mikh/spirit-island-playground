@@ -1,0 +1,31 @@
+First step is to be able to model the board game itself. 
+
+We can start with a single board.
+I) Single board
+    1) board
+        a) Model Land
+        b) Connect Lands
+        c) Visualization?
+    2) Basic pieces
+        a) Dahan
+        b) Blight
+        c) Invaders
+            i) Explorer
+            ii) Town
+            iii) City
+    3) Game State
+        a) Blight Loss Condition
+            i) Basic (5 blight)
+            ii) Blight Card (2/player + default underblight) - not creating all blight cards or blight card effects
+            iii) Loss Condition
+        b) Invader cards
+            i) Card types + stages
+            ii) Deck
+        c) Turn order (without spirits)
+        d) Invader Phases
+            i) Explore
+            ii) Build
+            iii) Ravage + Dahan response + blight
+        e) Game Model
+    
+        
