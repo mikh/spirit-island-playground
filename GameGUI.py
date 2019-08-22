@@ -2,8 +2,13 @@
 
 import arcade
 import math
+import random
 from timeit import default_timer as timer
 import numpy as np
+from itertools import permutations
+
+from Digital_Library.lib import math_lib
+from Digital_Library.lib import log_lib
 
 SCREEN_WIDTH = 1200
 SCREEN_HEIGHT = 800
@@ -25,6 +30,19 @@ class GameGUI(arcade.Window):
         'SANDS' : arcade.color.CANARY_YELLOW
     }
 
+    @staticmethod
+    def calc_distance(coords1, coords2):
+        """ Calculates distance between two sets of coords
+
+            ### Arguments:
+                coords1<tuple<float>>: first set of coords, X, Y
+                coords2<tuple<float>>: second set of coords X, Y
+            
+            ### Returns:
+                distance<float>: distance between coords
+        """
+        return math.sqrt(math.pow(coords1[0] - coords2[0], 2) + math.pow(coords1[1] - coords2[1], 2))
+
     def __init__(self, width, height, title):
         """ Constructor
 
@@ -40,6 +58,197 @@ class GameGUI(arcade.Window):
         arcade.set_background_color(arcade.color.DARK_BLUE)
 
         self.shape_list = None
+
+    def get_land_coords_improved(self, padding, spacing, sq_size, land, land_distances):
+        """ Calculates land coords
+
+            ### Arguments:
+                self<GameGUI>: self-reference
+                padding<int>: padding to use
+                spacing<int>: spacing to use
+                sq_size<int>: square size
+                land<Land>: land coordinates
+                land_distances<dict>: distances in hops from one land to another
+        """
+
+        def calc_distance(coords1, coords2):
+            """ Calculates distance between two sets of coords
+
+                ### Arguments:
+                    coords1<tuple<float>>: first set of coords, X, Y
+                    coords2<tuple<float>>: second set of coords X, Y
+                
+                ### Returns:
+                    distance<float>: distance between coords
+            """
+            return math.sqrt(math.pow(coords1[0] - coords2[0], 2) + math.pow(coords1[1] - coords2[1], 2))
+
+    def voronoi_placements(self, lands, land_distances, padding, spacing):
+        random.seed(a=10)
+        x_min = padding
+        x_max = self.width - padding
+        y_min = padding
+        y_max = self.height - padding
+
+        coords = []
+
+        for ii in range(len(lands)):
+            placed = False
+            while not placed:
+                placed = True
+                C = [random.randint(x_min, x_max), random.randint(y_min, y_max)]
+                for eC in coords:
+                    if GameGUI.calc_distance(eC, C) < (spacing):
+                        placed = False
+                        break
+                if placed:
+                    coords.append(C)
+                    self.shape_list.append(arcade.create_ellipse_filled(C[0], C[1], 10, 10, arcade.color.BLACK))
+        distances = np.zeros((len(coords), len(coords)))
+        for ii in range(len(coords)):
+            for jj in range(len(coords)):
+                if ii == jj:
+                    distances[ii][jj] = 0
+                else:
+                    distances[ii][jj] = GameGUI.calc_distance(coords[ii], coords[jj])
+
+
+        print("Coords: ")
+        for C in coords:
+            print("{}\t{}".format(C[0], C[1]))
+
+        L = list(permutations(range(len(lands))))
+        print("Number of permutations: {}".format(len(L)))
+
+        best_score = -1
+        best_permutation = None
+
+        def calc_score(perm, land_distances, distances):
+            #perm = (7,1,2,5,6,8,0,4,3)
+            # print("Try this")
+            score = 0
+            for land in land_distances:
+                dist_breakdown = {}
+                for nex_land in land_distances[land]:
+                    if land != nex_land:
+                        D = land_distances[land][nex_land]
+                        if not D in dist_breakdown:
+                            dist_breakdown[D] = []
+                        dist_breakdown[D].append(distances[perm.index(land)][perm.index(nex_land)])
+                keys = sorted(list(dist_breakdown.keys()))
+
+                consistent = True
+                prev_max = max(dist_breakdown[keys[0]])
+                for ii in range(1, len(keys)):
+                    cur_min = min(dist_breakdown[keys[ii]])
+                    if prev_max > cur_min:
+                        consistent = False
+                        #break
+                    else:
+                        score += 1
+                    prev_max = max(dist_breakdown[keys[ii]])
+                if consistent:
+                    score += 5             
+            return score
+        instance = 0
+        total = len(L)
+        for perm in L:
+            if instance % 1000 == 0:
+                log_lib.update_progress_bar(instance/total, "Scanning permutation #{}. Best Score={}...".format(instance, best_score), total_size=200)
+            instance += 1
+            score = calc_score(perm, land_distances, distances)
+            if score > best_score:
+                best_score = score
+                best_permutation = perm
+        log_lib.update_progress_bar(1, "Done. Best Score={}. Best Permutation = [{}]".format(best_score, ", ".join([str(x) for x in best_permutation]) ), total_size=200, end='\n')
+
+        self.best_permutation = best_permutation
+        self.final_coordinates = coords
+
+        
+
+        return None
+
+        
+
+    def calculate_placements(self, lands, land_distances, padding, spacing, sq_size):
+        x_min = padding
+        x_max = self.width - padding
+        y_min = padding
+        y_max = self.height - padding
+
+        MIN_DISTANCE = spacing
+        TRIALS = 10
+        STEP_SIZE = 1
+        MAX_MOVEMENT = spacing
+
+
+        coords = {}
+        coords[0] = [x_min, int(self.height/2)]
+        x_min += (spacing  + sq_size)
+        for land in range(1, len(lands)):
+            coords[land] = [random.randint(x_min, x_max), random.randint(y_min, y_max)]
+        
+        prev_values = {}
+        print("Initial")
+        for ii in range(len(coords)):
+            print("\t{}: [{},{}]".format(ii, coords[ii][0], coords[ii][1]))
+            prev_values[ii] = coords[ii]
+        base = np.array([[[x,y] for y in range(y_min, y_max, STEP_SIZE)] for x in range(x_min, x_max, STEP_SIZE)])
+        
+        """
+        distances = np.zeros((len(coords), len(coords)))
+        for ii in range(len(coords)):
+            for jj in range(len(coords)):
+                if ii == jj:
+                    distances[ii][jj] = 0
+                else:
+                    distances[ii][jj] = GameGUI.calc_distance(coords[ii], coords[jj])
+                    if distances[ii][jj] < MIN_DISTANCE:
+                        distances[ii][jj] = np.inf
+        """
+        for trial in range(TRIALS):
+            
+            land_order = list(range(1, len(coords)))
+            random.shuffle(land_order)
+            for ii in land_order:
+                P = coords[ii]
+                P_ymin = max([y_min, P[1] - MAX_MOVEMENT])
+                P_xmin = max([x_min, P[0] - MAX_MOVEMENT])
+                y_range = range(P_ymin, min([y_max, P[1]+MAX_MOVEMENT]), STEP_SIZE)
+                x_range = range(P_xmin, min([x_max, P[0]+MAX_MOVEMENT]), STEP_SIZE)
+                move_coords = np.array([[[x,y] for y in y_range] for x in x_range])
+
+                restriction_shortlist = []
+                for jj in range(len(coords)):
+                    if ii != jj:
+                        restriction_shortlist.append({'coords': coords[jj], 'distance': land_distances[ii][jj]*(spacing + sq_size)})
+                best_coords = None
+                total = np.zeros((move_coords.shape[0], move_coords.shape[1]))
+                for restriction in restriction_shortlist:
+                    C = restriction['coords']
+                    a = np.square(move_coords[:, :, 0] - C[0]) + np.square(move_coords[:, :, 1] - C[1])
+                    d = np.sqrt(a)
+
+                    d[d < restriction['distance']] -= 9000
+                    d[d < 0] *= (-1)
+
+                    total += d
+                best_coords = np.where(total == np.min(total))
+                best_coords = (best_coords[0][0] + P_xmin, best_coords[1][0] + P_ymin)
+
+                coords[ii] = best_coords
+            print("Trial #{}".format(trial))
+            for ii in range(len(coords)):
+                print("\t{}: [{},{}] d {:.2f}".format(ii, coords[ii][0], coords[ii][1], GameGUI.calc_distance(coords[ii], prev_values[ii])))
+                prev_values[ii] = coords[ii]
+            
+        return coords
+
+        
+         
+
+
 
     def get_land_coords(self, padding, spacing, sq_size, land, land_distances):
         """ Calculates land coords
@@ -153,17 +362,23 @@ class GameGUI(arcade.Window):
         for board_letter in G.boards:
             board = G.boards[board_letter]
             land_distances = board.get_land_distances()
-            
-            for land_number in range(len(board.lands)):
-                land = board.lands[land_number]
-                land_coords = self.get_land_coords(padding, spacing, sq_size, land, land_distances)
-                
-                self.shape_list.append(self.generate_land(land, sq_size, land_coords))
 
-        for connection in self.connections:
-            X, Y = connection
-            line = arcade.create_line(self.land_coords[X][0], self.land_coords[X][1], self.land_coords[Y][0], self.land_coords[Y][1], arcade.color.RED, 3)
-            self.connection_list.append(line)
+            self.voronoi_placements(board.lands, land_distances, padding, spacing)
+
+            #calculate_coords = self.calculate_placements(board.lands, land_distances, padding, spacing, sq_size)
+            #for land in calculate_coords:
+            #    self.shape_list.append(self.generate_land(board.lands[land], sq_size, [calculate_coords[land][0], calculate_coords[land][1]]))
+            
+            #for land_number in range(len(board.lands)):
+            #    land = board.lands[land_number]
+            #    land_coords = self.get_land_coords(padding, spacing, sq_size, land, land_distances)
+                
+            #    self.shape_list.append(self.generate_land(land, sq_size, land_coords))
+
+        #for connection in self.connections:
+        #    X, Y = connection
+        #    line = arcade.create_line(self.land_coords[X][0], self.land_coords[X][1], self.land_coords[Y][0], self.land_coords[Y][1], arcade.color.RED, 3)
+        #    self.connection_list.append(line)
 
     def on_draw(self):
         """ Draws the GUI
@@ -172,11 +387,34 @@ class GameGUI(arcade.Window):
                 self<GameGUI>: self-reference
         """
         arcade.start_render()
-        self.connection_list.draw()
+        #self.connection_list.draw()
         self.shape_list.draw()
 
-        for land in self.land_coords:
-            arcade.draw_text(str(land), self.land_coords[land][0] + 5, self.land_coords[land][1] + 5, arcade.color.BLACK, 14)
+        land_num = 0
+        for land in self.best_permutation:
+            arcade.draw_text(str(land_num), self.final_coordinates[land][0] + 15, self.final_coordinates[land][1] + 15, arcade.color.WHITE, 14)
+            land_num += 1
+        for ii in range(len(self.final_coordinates)):
+            arcade.draw_text(str(ii), self.final_coordinates[ii][0]+30, self.final_coordinates[ii][1]+30, arcade.color.ORANGE)
+        """
+        for ii in range(len(self.final_coordinates)):
+            for jj in range(ii+1, len(self.final_coordinates)):
+                iC = self.final_coordinates[ii]
+                jC = self.final_coordinates[jj]
+                arcade.draw_line(iC[0], iC[1], jC[0], jC[1], arcade.color.GRAY)
+                distance = GameGUI.calc_distance(iC, jC)
+                label_coord = [
+                    (max([iC[0], jC[0]]) - min([iC[0], jC[0]]))/2 + min([iC[0], jC[0]]),
+                    (max([iC[1], jC[1]]) - min([iC[1], jC[1]])/2) + min([iC[1], jC[1]])
+                ]
+                arcade.draw_text("{:.2f}".format(distance), label_coord[0], label_coord[1], arcade.color.ORANGE)
+        """
+
+
+            
+
+        #for land in self.land_coords:
+        #   arcade.draw_text(str(land), self.land_coords[land][0] + 5, self.land_coords[land][1] + 5, arcade.color.BLACK, 14)
 
 def launch(G):
     """ Launches the GUI 
