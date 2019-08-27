@@ -24,8 +24,11 @@ def _calculate_N_and_radius(lands, x_max, x_min, y_max, y_min):
     max_radius = math.sqrt((x_max - x_min) * (y_max - y_min)/N)
     return N, max_radius
 
-def _generate_points(max_radius, x_min, x_max, y_min, y_max, N, sub_offset=10):
-    coords = []
+def _generate_points(max_radius, x_min, x_max, y_min, y_max, N, sub_offset=20, existing_points=None):
+    if existing_points is not None:
+        coords = existing_points.copy()
+    else:
+        coords = []
 
     for ii in range(N):
         placed = False
@@ -82,6 +85,45 @@ def _calculate_permutation_distance(perm, distances, land_distances):
                 D += distances[ii][perm.index(eP)]
     return D    
 
+def _calculate_order(coords, N, land_distances):
+    distances = _calculate_distances(coords, N)
+    order = list(range(N))
+
+    all_perms = list(permutations(range(1, N)))
+    instance = 0 
+    total = len(all_perms)
+    print("Number of permutations: ", total)
+
+    best_distance = np.inf
+    best_permutation = []
+
+    for perm in all_perms:
+        perm = (0, *perm)
+        if instance % 100 == 0:
+            log_lib.update_progress_bar(instance/total, "Analyzing #{}. Best distance={}. Best Permutation={}".format(instance, best_distance, _print_permutation(best_permutation)), total_size=170)
+        instance += 1
+
+        distance = _calculate_permutation_distance(perm, distances, land_distances)
+        if distance < best_distance:
+            best_distance = distance
+            best_permutation = perm
+    log_lib.update_progress_bar(1, "Finished. Best distance={}. Best Permutation={}".format(best_distance, _print_permutation(best_permutation)), total_size=170, end=True)
+    return best_permutation
+
+def _generate_connection_list(coords, num_connections=8):
+    connection_list = []
+    distances = _calculate_distances(coords, len(coords))
+
+    for P in range(len(coords)):
+        D = distances[P, :]
+        E = sorted([[D[ii], ii] for ii in range(len(D))], key=lambda x: x[0])
+        for ii in range(1, num_connections+1):
+            C = sorted([P, E[ii][1]])
+            if not C in connection_list:
+                connection_list.append(C)
+
+    return connection_list 
+
 
 class GameGUI(arcade.Window):
     """ Spirit Island display """
@@ -131,32 +173,25 @@ class GameGUI(arcade.Window):
         print("Start Point: [{},{}]".format(start_C[0], start_C[1]))
         self.shape_list.append(arcade.create_ellipse_filled(start_C[0], start_C[1], 10, 10, arcade.color.RED))
 
-        distances = _calculate_distances(coords, N)
-        order = list(range(N))
-
-        all_perms = list(permutations(range(1, N)))
-        instance = 0 
-        total = len(all_perms)
-        print("Number of permutations: ", total)
-
-        best_distance = np.inf
-        best_permutation = []
-
-        for perm in all_perms:
-            perm = (0, *perm)
-            if instance % 100 == 0:
-                log_lib.update_progress_bar(instance/total, "Analyzing #{}. Best distance={}. Best Permutation={}".format(instance, best_distance, _print_permutation(best_permutation)), total_size=170)
-            instance += 1
-
-            distance = _calculate_permutation_distance(perm, distances, land_distances)
-            if distance < best_distance:
-                best_distance = distance
-                best_permutation = perm
-        log_lib.update_progress_bar(1, "Finished. Best distance={}. Best Permutation={}".format(best_distance, _print_permutation(best_permutation)), total_size=170, end=True)
+        best_permutation = _calculate_order(coords, N, land_distances)
         
         self.order = best_permutation
         self.coords = coords
-    
+
+        self.subcoords = _generate_points(50, x_min, x_max, y_min, y_max, 300, existing_points=coords)
+        for ii in range(len(self.subcoords)-1, -1, -1):
+            S = self.subcoords[ii]
+            if S in coords:
+                del self.subcoords[ii]
+            else:
+                self.shape_list.append(arcade.create_ellipse_filled(S[0], S[1], 1, 1, arcade.color.RED))
+        self.allcoords = [*self.coords, *self.subcoords]
+
+        self.connection_list = _generate_connection_list(self.allcoords)
+        for connection in self.connection_list:
+            P1 = self.allcoords[connection[0]]
+            P2 = self.allcoords[connection[1]]
+            #self.shape_list.append(arcade.create_line(P1[0], P1[1], P2[0], P2[1], arcade.color.GRAY))   
 
     def on_draw(self):
         """ Draws the GUI
