@@ -110,7 +110,48 @@ def _calculate_order(coords, N, land_distances):
     log_lib.update_progress_bar(1, "Finished. Best distance={}. Best Permutation={}".format(best_distance, _print_permutation(best_permutation)), total_size=170, end=True)
     return best_permutation
 
-def _generate_connection_list(coords, num_connections=8):
+def _check_intersection(S1, S2):
+    """ Checks if two line segments intersect
+        https://stackoverflow.com/questions/3838329/how-can-i-check-if-two-segments-intersect
+        https://martin-thoma.com/how-to-check-if-two-line-segments-intersect/
+
+        ### Arguments:
+            S1<list<list<int>>>: first segment
+            S2<list<list<int>>>: second segment
+
+        ### Returns:
+            intersect<boolean>: True if they intersect
+    """
+    X1 = S1[0][0]
+    Y1 = S1[0][1]
+    X2 = S1[1][0]
+    Y2 = S1[1][1]
+    X3 = S2[0][0]
+    Y3 = S2[0][1]
+    X4 = S2[1][0]
+    Y4 = S2[1][1]
+
+    if(max([X1, X2]) < min([X3, X4]) or (max([Y1, Y2]) < min([Y3, Y4]))):
+        return False
+    
+    DX1 = X1-X2
+    DX2 = X3-X4
+
+    if DX1 == 0 or DX2 == 0:
+        pass
+    else:
+        A1 = (Y1-Y2)/DX1
+        A2 = (Y3-Y4)/DX2
+        b1 = Y1 - (A1*X1)
+        b2 = Y3 - (A2*X3)
+        if A1 == A2:
+            return False
+        Xa = (b2-b1) / (A1-A2)
+        if Xa < max([min([X1, X2]), min([X3, X4])]) or Xa > 
+
+
+
+def _generate_connection_list(coords, num_connections=5):
     connection_list = []
     distances = _calculate_distances(coords, len(coords))
 
@@ -123,6 +164,103 @@ def _generate_connection_list(coords, num_connections=8):
                 connection_list.append(C)
 
     return connection_list 
+
+def _transform_connection_list_to_map(L):
+    """ Creates a connection map from a connection list
+
+        ### Arguments:
+            L<list<list<int>>>: list of node connections
+
+        ### Returns:
+            M<dict<list<int>>>: mapping of connections
+    """
+    M = {}
+    for l in L:
+        I1 = l[0]
+        I2 = l[1]
+        if not I1 in M:
+            M[I1] = []
+        if not I2 in M[I1]:
+            M[I1].append(I2)
+        if not I2 in M:
+            M[I2] = []
+        if not I1 in M[I2]:
+            M[I2].append(I1)
+    return M
+        
+def _BFS(si, ei, M, R_L):
+    """ Performs a BFS to find ei from ei
+
+        ### Arguments:
+            si<int>: start node
+            ei<int>: end node
+            M<dict>: mapping of connections
+            R_L<list<int>>: restricted list
+
+        ### Returns: 
+            path<list<int>>: list of nodes to get from si to ei. None if none could be found
+    """
+    paths = [[si]]
+    seen_nodes = [si]
+
+    movement = True
+    while movement:
+        movement = False
+
+        next_paths = []
+        for p in paths:
+            cur_node = p[-1]
+            for next_node in M[cur_node]:
+                if next_node == ei:
+                    p.append(ei)
+                    return p
+                if not next_node in p and not next_node in R_L and not next_node in seen_nodes:
+                    next_paths.append([*p, next_node])
+                    seen_nodes.append(next_node)
+                    movement = True
+        paths = next_paths
+    return None 
+                
+
+
+
+    
+def _build_paths(M, N):
+    """ Builds the paths between pairs of nodes using BFS
+
+        ### Arguments: 
+            M<dict<list<int>>>: map of connections
+            N<list<dict>>: list of nodes to connect
+
+        ### Returns:
+            paths<list<dict>>: list of paths
+    """
+    connected_nodes = []
+    paths = []
+
+    R_L = [x['index'] for x in N]
+
+    for start_node in N:
+        start_I = start_node['index']
+        connections = start_node['connections']
+
+        for end_I in connections:
+            id = [min([start_I, end_I]), max([start_I, end_I])]
+            if id in connected_nodes:   # already connected
+                continue
+            P = _BFS(start_I, end_I, M, R_L)
+            if P is None:
+                print("Could not find path!")
+            else:
+                print("Path found from {} => {}".format(start_I, end_I))
+                R_L.extend(P)
+                R_L = list(set(R_L))
+                connected_nodes.append(id)
+                paths.append(P)
+    return paths
+
+
+        
 
 
 class GameGUI(arcade.Window):
@@ -153,6 +291,9 @@ class GameGUI(arcade.Window):
         self.shape_list = None
 
     def voronoi_placements_fix(self, lands, land_distances, padding, spacing):
+        #https://gamedev.stackexchange.com/questions/79049/generating-tile-map
+
+        # Calculate initial values
         x_min = padding
         x_max = self.width - padding
         y_min = padding
@@ -161,6 +302,7 @@ class GameGUI(arcade.Window):
         N, max_radius = _calculate_N_and_radius(lands, x_max, x_min, y_max, y_min)
         print("Max Radius: ", max_radius)
 
+        # Generating land center points
         coords = _generate_points(max_radius, x_min, x_max, y_min, y_max, N)
         start_C = _get_top_left_point(coords)
         del coords[coords.index(start_C)]
@@ -173,12 +315,14 @@ class GameGUI(arcade.Window):
         print("Start Point: [{},{}]".format(start_C[0], start_C[1]))
         self.shape_list.append(arcade.create_ellipse_filled(start_C[0], start_C[1], 10, 10, arcade.color.RED))
 
+        # Calculate best placement
         best_permutation = _calculate_order(coords, N, land_distances)
         
         self.order = best_permutation
         self.coords = coords
 
-        self.subcoords = _generate_points(50, x_min, x_max, y_min, y_max, 300, existing_points=coords)
+        # Generate subpoints
+        self.subcoords = _generate_points(50, x_min, x_max, y_min, y_max, 400, existing_points=coords)
         for ii in range(len(self.subcoords)-1, -1, -1):
             S = self.subcoords[ii]
             if S in coords:
@@ -187,11 +331,30 @@ class GameGUI(arcade.Window):
                 self.shape_list.append(arcade.create_ellipse_filled(S[0], S[1], 1, 1, arcade.color.RED))
         self.allcoords = [*self.coords, *self.subcoords]
 
+        # Ceate connections between subpoints
         self.connection_list = _generate_connection_list(self.allcoords)
+        self.connection_map = _transform_connection_list_to_map(self.connection_list)
         for connection in self.connection_list:
             P1 = self.allcoords[connection[0]]
             P2 = self.allcoords[connection[1]]
-            #self.shape_list.append(arcade.create_line(P1[0], P1[1], P2[0], P2[1], arcade.color.GRAY))   
+            self.all_connections.append(arcade.create_line(P1[0], P1[1], P2[0], P2[1], arcade.color.GRAY))   
+
+        # Calculate paths between adjacent lands
+        node_connections = []
+        for o, C in zip(self.order, self.coords):
+            index = self.allcoords.index(C)
+            if index == -1:
+                print("Cannot find index!")
+            node_connections.append({'index': index, 'connections': [self.allcoords.index(self.coords[self.order.index(x)]) for x in land_distances[o] if land_distances[o][x] == 1]})
+        paths = _build_paths(self.connection_map, node_connections)
+        for path in paths:
+            for ii in range(1, len(path)):
+                P1 = self.allcoords[path[ii]]
+                P2 = self.allcoords[path[ii-1]]
+                self.linking_connections.append(arcade.create_line(P1[0], P1[1], P2[0], P2[1], arcade.color.RED, 3))
+
+
+
 
     def on_draw(self):
         """ Draws the GUI
@@ -199,13 +362,80 @@ class GameGUI(arcade.Window):
             ### Arguments:
                 self<GameGUI>: self-reference
         """
-        arcade.start_render()
-        #self.connection_list.draw()
-        self.shape_list.draw()
 
-        for land_number, coord_number, C in zip(self.order, range(len(self.order)), self.coords):
-            arcade.draw_text(str(land_number), C[0] + 15, C[1] + 15, arcade.color.WHITE, 14)
-            arcade.draw_text(str(coord_number), C[0] + 30, C[1] + 30, arcade.color.ORANGE, 14)
+        def draw_land_numbers(land_order, point_order, coords, land_number_offset=(15, 15), land_number_color=arcade.color.WHITE, land_number_size=14, point_index_offset=(30,30), point_index_color=arcade.color.ORANGE, point_index_size=14):
+            """ Draws the land numbers - both the selected number and the original point number.
+                Selected number - number of the land in the game
+                point number - index of point in coord list
+            
+                ### Arguments:
+                    land_order<list<int>>: list of land numbers
+                    point_order<list<int>>: list of point indices
+                    coords<list<list<float>>>: list of point indices
+                    land_number_offset<tuple<int>>: offset in px for land number
+                    land_number_color<arcade.color>: color of land number value
+                    land_number_size<int>: size of land number text
+                    point_index_offset<tuple<int>>: offset in px for point index
+                    point_index_color<arcade.color>>: color of point index value
+                    point_index_size<int>: size of point index text
+            """
+            for land_number, coord_number, C in zip(land_order, point_order, coords):
+                arcade.draw_text(str(land_number), C[0] + land_number_offset[0], C[1] + land_number_offset[1], land_number_color, land_number_size)
+                arcade.draw_text(str(coord_number), C[0] + point_index_offset[0], C[1] + point_index_offset[1], point_index_color, point_index_size)       
+
+        arcade.start_render()
+
+        self.shape_list.draw()
+        self.all_connections.draw()
+        self.linking_connections.draw()
+
+        draw_land_numbers(self.order, range(len(self.order)), self.coords)
+
+    def setup(self, G, padding=PADDING, spacing=SPACING, sq_size=SQUARE_SIZE):
+        """ Sets up gui
+
+            ### Arguments:
+                self<GameGUI>: self-reference
+                G<game>: game reference
+        """
+        self.shape_list = arcade.ShapeElementList()
+        self.all_connections = arcade.ShapeElementList()
+        self.linking_connections = arcade.ShapeElementList()
+
+        self.land_coords = {}
+        self.connections = []
+        self.last_land_coords = [None, None]
+        self.restrictions = []
+
+        for board_letter in G.boards:
+            board = G.boards[board_letter]
+            land_distances = board.get_land_distances()
+
+            self.voronoi_placements_fix(board.lands, land_distances, padding, spacing)
+
+            
+
+
+    def setup_old(self):
+        #self.voronoi_placements(board.lands, land_distances, padding, spacing)
+
+        #calculate_coords = self.calculate_placements(board.lands, land_distances, padding, spacing, sq_size)
+        #for land in calculate_coords:
+        #    self.shape_list.append(self.generate_land(board.lands[land], sq_size, [calculate_coords[land][0], calculate_coords[land][1]]))
+        
+        #for land_number in range(len(board.lands)):
+        #    land = board.lands[land_number]
+        #    land_coords = self.get_land_coords(padding, spacing, sq_size, land, land_distances)
+            
+        #    self.shape_list.append(self.generate_land(land, sq_size, land_coords))
+
+        #for connection in self.connections:
+        #    X, Y = connection
+        #    line = arcade.create_line(self.land_coords[X][0], self.land_coords[X][1], self.land_coords[Y][0], self.land_coords[Y][1], arcade.color.RED, 3)
+        #    self.connection_list.append(line)
+        pass
+
+    def draw_old(self):
         #land_num = 0
         #for land in self.best_permutation:
         #    arcade.draw_text(str(land_num), self.final_coordinates[land][0] + 15, self.final_coordinates[land][1] + 15, arcade.color.WHITE, 14)
@@ -225,46 +455,8 @@ class GameGUI(arcade.Window):
                 ]
                 arcade.draw_text("{:.2f}".format(distance), label_coord[0], label_coord[1], arcade.color.ORANGE)
         """
-        #for land in self.land_coords:
-        #   arcade.draw_text(str(land), self.land_coords[land][0] + 5, self.land_coords[land][1] + 5, arcade.color.BLACK, 14)
+        pass
 
-    def setup(self, G, padding=PADDING, spacing=SPACING, sq_size=SQUARE_SIZE):
-        """ Sets up gui
-
-            ### Arguments:
-                self<GameGUI>: self-reference
-                G<game>: game reference
-        """
-        self.shape_list = arcade.ShapeElementList()
-        self.connection_list = arcade.ShapeElementList()
-
-        self.land_coords = {}
-        self.connections = []
-        self.last_land_coords = [None, None]
-        self.restrictions = []
-
-        for board_letter in G.boards:
-            board = G.boards[board_letter]
-            land_distances = board.get_land_distances()
-
-            self.voronoi_placements_fix(board.lands, land_distances, padding, spacing)
-
-            #self.voronoi_placements(board.lands, land_distances, padding, spacing)
-
-            #calculate_coords = self.calculate_placements(board.lands, land_distances, padding, spacing, sq_size)
-            #for land in calculate_coords:
-            #    self.shape_list.append(self.generate_land(board.lands[land], sq_size, [calculate_coords[land][0], calculate_coords[land][1]]))
-            
-            #for land_number in range(len(board.lands)):
-            #    land = board.lands[land_number]
-            #    land_coords = self.get_land_coords(padding, spacing, sq_size, land, land_distances)
-                
-            #    self.shape_list.append(self.generate_land(land, sq_size, land_coords))
-
-        #for connection in self.connections:
-        #    X, Y = connection
-        #    line = arcade.create_line(self.land_coords[X][0], self.land_coords[X][1], self.land_coords[Y][0], self.land_coords[Y][1], arcade.color.RED, 3)
-        #    self.connection_list.append(line)
 
     def voronoi_placements(self, lands, land_distances, padding, spacing):
         random.seed(a=10)
