@@ -145,9 +145,15 @@ def _check_intersection(S1, S2):
         b1 = Y1 - (A1*X1)
         b2 = Y3 - (A2*X3)
         if A1 == A2:
+            if b1 == b2:
+                return True
             return False
+
         Xa = (b2-b1) / (A1-A2)
-        if Xa < max([min([X1, X2]), min([X3, X4])]) or Xa > 
+        if Xa < max([min([X1, X2]), min([X3, X4])]) or Xa > min([max([X1, X2]), max([X3, X4])]):
+            return False
+        else:
+            return True
 
 
 
