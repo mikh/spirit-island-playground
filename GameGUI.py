@@ -20,27 +20,59 @@ SQUARE_SIZE = 100
 STEP_SIZE = 1
 
 def _calculate_N_and_radius(lands, x_max, x_min, y_max, y_min):
+    """ Calculates number of nodes and max radius
+
+        ### Arguments:
+            lands<list<land>>: list of lands
+            x_max<float>: max x position
+            x_min<float>: min x position
+            y_max<float>: max y position
+            y_min<float>: min y position
+
+        ### Returns:
+            N<int>: number of nodes
+            max_radius<float>: max radius value
+    """
     N = len(lands)
     max_radius = math.sqrt((x_max - x_min) * (y_max - y_min)/N)
     return N, max_radius
 
-def _generate_points(max_radius, x_min, x_max, y_min, y_max, N, sub_offset=20, existing_points=None):
+def _generate_points(max_radius, x_min, x_max, y_min, y_max, N, logger, existing_points=None):
+    """ Generates points randomly
+
+        ### Arguments:
+            max_radius<float>: maximum radius to allow
+            x_max<float>: max x position
+            x_min<float>: min x position
+            y_max<float>: max y position
+            y_min<float>: min y position
+            N<int>: number of points to generate
+            logger<QuickLogger>: logger
+            existing_points<list<list<float>>>: existing points to account for
+
+        ### Returns:
+            coords<list<list<float>>>: list of point coordinates
+    """
+
     if existing_points is not None:
         coords = existing_points.copy()
     else:
         coords = []
 
     for ii in range(N):
+        logger.progress(ii/N, "Creating point #{}".format(ii+1), indent_level=5, total_size=120)
+        
         placed = False
         while not placed:
             placed = True
             C = [random.randint(x_min, x_max), random.randint(y_min, y_max)]
             for eC in coords:
-                if _calc_distance(eC, C) < (max_radius - sub_offset):
+                if _calc_distance(eC, C) < max_radius:
                     placed = False
                     break
             if placed:
                 coords.append(C)
+    logger.progress(1, "Done. Created {} points.".format(N), indent_level=5, total_size=120, finish=True)
     return coords
 
 def _calc_distance(coords1, coords2):
@@ -85,29 +117,35 @@ def _calculate_permutation_distance(perm, distances, land_distances):
                 D += distances[ii][perm.index(eP)]
     return D    
 
-def _calculate_order(coords, N, land_distances):
+def _calculate_order(coords, N, land_distances, logger):
+    logger.start_section("Calculating optimal order", indent_level=5, timer_name="calc_order", end='\n')
+
+    logger.start_section("Init calculations", indent_level=6, timer_name='init_calcs')
     distances = _calculate_distances(coords, N)
     order = list(range(N))
 
     all_perms = list(permutations(range(1, N)))
     instance = 0 
     total = len(all_perms)
-    print("Number of permutations: ", total)
 
     best_distance = np.inf
     best_permutation = []
 
+    logger.end_section(message=" {} Permtations".format(total), timer_name="init_calcs")
+
     for perm in all_perms:
         perm = (0, *perm)
         if instance % 100 == 0:
-            log_lib.update_progress_bar(instance/total, "Analyzing #{}. Best distance={}. Best Permutation={}".format(instance, best_distance, _print_permutation(best_permutation)), total_size=170)
+            logger.progress(instance/total, "Analyzing #{}. Best distance={}. Best Permutation={}".format(instance, best_distance, _print_permutation(best_permutation)), total_size=170, indent_level=6)
         instance += 1
 
         distance = _calculate_permutation_distance(perm, distances, land_distances)
         if distance < best_distance:
             best_distance = distance
             best_permutation = perm
-    log_lib.update_progress_bar(1, "Finished. Best distance={}. Best Permutation={}".format(best_distance, _print_permutation(best_permutation)), total_size=170, end=True)
+    logger.progress(1, "Finished. Best distance={}. Best Permutation={}".format(best_distance, _print_permutation(best_permutation)), total_size=170, finish=True, indent_level=6)
+    
+    logger.end_section(indent_level=5, timer_name="calc_order")
     return best_permutation
 
 def _check_intersection(S1, S2):
@@ -131,14 +169,39 @@ def _check_intersection(S1, S2):
     X4 = S2[1][0]
     Y4 = S2[1][1]
 
-    if(max([X1, X2]) < min([X3, X4]) or (max([Y1, Y2]) < min([Y3, Y4]))):
+    minP1 = (min([X1, X2]), min([Y1, Y2]))
+    maxP1 = (max([X1, X2]), max([Y1, Y2]))
+    minP2 = (min([X3, X4]), min([Y3, Y4]))
+    maxP2 = (max([X3, X4]), max([Y3, Y4]))
+
+    if (S1[0] == S2[0] and S1[1] == S2[1]) or (S1[0] == S2[1] and S1[1] == S2[0]):
+        return True
+    elif S1[0] in S2 or S1[1] in S2:
+        return False
+
+    if maxP1[0] < minP2[0] or maxP2[0] < minP1[0] or maxP1[1] < minP2[1] or maxP2[1] < minP1[1]:
         return False
     
     DX1 = X1-X2
     DX2 = X3-X4
 
     if DX1 == 0 or DX2 == 0:
-        pass
+        if DX1 == DX2:
+            return True
+        if DX1 == 0:
+            Xmatch = X1
+            A = (Y3-Y4)/DX2
+            b = Y3 - (A*X3)
+            Yrange = [minP1[1], maxP1[1]]
+        elif DX2 == 0:
+            Xmatch = X3    
+            A = (Y1-Y2)/DX1
+            b = Y1 - (A*X1)
+            Yrange = [minP2[1], maxP2[1]]
+        Ymatch = A*Xmatch + b
+        if Ymatch > Yrange[0] and Ymatch < Yrange[1]:
+            return True
+        return False
     else:
         A1 = (Y1-Y2)/DX1
         A2 = (Y3-Y4)/DX2
@@ -155,20 +218,40 @@ def _check_intersection(S1, S2):
         else:
             return True
 
+def _matches_any_connection(new_l, connection_list, coords):
+    """ Checks if the new line segment matches any connection list line segment
 
+        ### Arguments:
+            new_l<list<int>>: line segment indices
+            connection_list<list<list<int>>>: list of existing line segments indices
+            coords<list<list<float>>>: coordinates
 
-def _generate_connection_list(coords, num_connections=5):
+        ### Returns:
+            anymatch<boolean>: intersection exists
+    """
+    f_new_l = [coords[new_l[0]], coords[new_l[1]]]
+    for e_l in connection_list:
+        if _check_intersection(f_new_l, [coords[e_l[0]], coords[e_l[1]]]):
+            return True
+    return False
+
+def _generate_connection_list(coords, logger, num_connections=8):
+    intersected_connections = 0
     connection_list = []
     distances = _calculate_distances(coords, len(coords))
 
     for P in range(len(coords)):
+        logger.progress(P/len(coords), "Generating edges for {}. {} current connections. {} intersected connections".format(P, len(connection_list), intersected_connections), indent_level=5, total_size=150)
         D = distances[P, :]
         E = sorted([[D[ii], ii] for ii in range(len(D))], key=lambda x: x[0])
         for ii in range(1, num_connections+1):
             C = sorted([P, E[ii][1]])
             if not C in connection_list:
-                connection_list.append(C)
-
+                if not _matches_any_connection(C, connection_list, coords):
+                    connection_list.append(C)
+                else:
+                    intersected_connections += 1
+    logger.progress(1, "Edges generated. {} connections total. {} intersected connections".format(len(connection_list), intersected_connections), indent_level=5, total_size=150, finish=True)
     return connection_list 
 
 def _transform_connection_list_to_map(L):
@@ -231,38 +314,58 @@ def _BFS(si, ei, M, R_L):
 
 
     
-def _build_paths(M, N):
+def _build_paths(M, N, logger):
     """ Builds the paths between pairs of nodes using BFS
 
         ### Arguments: 
             M<dict<list<int>>>: map of connections
             N<list<dict>>: list of nodes to connect
+            logger<QuickLogger>: logger
 
         ### Returns:
             paths<list<dict>>: list of paths
     """
-    connected_nodes = []
-    paths = []
+    attempted_orders = []
+    base_order = list(range(len(N)))
 
-    R_L = [x['index'] for x in N]
+    for attempt in range(50):
+        order = base_order.copy()
+        while order in attempted_orders:
+            random.shuffle(order)
+        attempted_orders.append(order)
+        
 
-    for start_node in N:
-        start_I = start_node['index']
-        connections = start_node['connections']
+        connected_nodes = []
+        paths = []
 
-        for end_I in connections:
-            id = [min([start_I, end_I]), max([start_I, end_I])]
-            if id in connected_nodes:   # already connected
-                continue
-            P = _BFS(start_I, end_I, M, R_L)
-            if P is None:
-                print("Could not find path!")
-            else:
-                print("Path found from {} => {}".format(start_I, end_I))
-                R_L.extend(P)
-                R_L = list(set(R_L))
-                connected_nodes.append(id)
-                paths.append(P)
+        R_L = [x['index'] for x in N]
+        instance = 0
+        total = len(N)
+        completed_paths = 0
+        unmappable_paths = 0
+
+        for ii in order:
+            start_node = N[ii]
+            logger.progress(instance/total, "Building paths for {}. {} Paths completed. {} Unmappable paths".format(start_node['index'], completed_paths, unmappable_paths), total_size=150, indent_level=5)
+            start_I = start_node['index']
+            connections = start_node['connections']
+
+            for end_I in connections:
+                id = [min([start_I, end_I]), max([start_I, end_I])]
+                if id in connected_nodes:   # already connected
+                    continue
+                P = _BFS(start_I, end_I, M, R_L)
+                if P is None:
+                    unmappable_paths += 1
+                else:
+                    R_L.extend(P)
+                    R_L = list(set(R_L))
+                    connected_nodes.append(id)
+                    paths.append(P)
+                    completed_paths += 1
+        logger.progress(1, "All paths built. {} paths completed. {} unmappable paths".format(completed_paths, unmappable_paths), total_size=150, indent_level=5, finish=True)
+        if unmappable_paths == 0:
+            break   
     return paths
 
 
@@ -280,7 +383,7 @@ class GameGUI(arcade.Window):
         'SANDS' : arcade.color.CANARY_YELLOW
     }
 
-    def __init__(self, width, height, title):
+    def __init__(self, width, height, title, G):
         """ Constructor
 
             ### Arguments:
@@ -288,17 +391,67 @@ class GameGUI(arcade.Window):
                 width<int>: width of screen
                 height<int>: height of screen
                 title<string>: string title
+                G<game>: game to display
         """
+        self.G = G
+        self.logger = self.G.logger
+        self.logger.start_section("Displaying Game", end='\n', timer_name="create_display")
+        self.logger.start_section("Constructing GameGUI", timer_name="construct_class", indent_level=1)
         super().__init__(width, height, title)
         self.width = width
         self.height = height
         arcade.set_background_color(arcade.color.DARK_BLUE)
 
         self.shape_list = None
+        self.logger.end_section(timer_name="construct_class")
+
+    def setup(self, padding=PADDING, spacing=SPACING, sq_size=SQUARE_SIZE):
+        """ Sets up gui
+
+            ### Arguments:
+                self<GameGUI>: self-reference
+                padding<float>: padding settings
+                spacing<float>: spacing of a value
+                sq_size<float>: size of square. Deprecated?
+        """
+        self.logger.start_section("Setting Up GUI", end='\n', timer_name="gamegui_setup", indent_level=1)
+
+        self.logger.start_section("Initializing containers", timer_name="init_containers", indent_level=2)
+        self.shape_list = arcade.ShapeElementList()
+        self.all_connections = arcade.ShapeElementList()
+        self.linking_connections = arcade.ShapeElementList()
+
+        self.land_coords = {}
+        self.connections = []
+        self.last_land_coords = [None, None]
+        self.restrictions = []
+        self.logger.end_section(timer_name="init_containers")
+
+        self.logger.start_section("Creating boards", end='\n', timer_name="create_boards", indent_level=2)
+        for board_letter in self.G.boards:
+            self.logger.start_section("Creating board {}".format(board_letter), end='\n', timer_name="create_single_board", indent_level=3)
+            board = self.G.boards[board_letter]
+            land_distances = board.get_land_distances()
+
+            self.voronoi_placements_fix(board.lands, land_distances, padding, spacing)
+            self.logger.end_section(timer_name="create_single_board", indent_level=3)
+        self.logger.end_section(timer_name="create_boards", indent_level=2)
+        self.logger.end_section(timer_name="gamegui_setup", indent_level=1)
 
     def voronoi_placements_fix(self, lands, land_distances, padding, spacing):
-        #https://gamedev.stackexchange.com/questions/79049/generating-tile-map
+        """ Calculates the board based on Voronoi Algorithm adaptation
+            #https://gamedev.stackexchange.com/questions/79049/generating-tile-map
 
+            ### Arguments:
+                self<GameGUI>: self-reference
+                lands<list<land>>: lands in the board
+                land_distances<dict>: distances between lands
+                padding<int>: padding used
+                spacing<int>: spacing between points
+        """
+        self.logger.start_section("Performing Vornoi Placements", indent_level=4, end='\n', timer_name='voronoi')
+
+        self.logger.start_section("Setting up initial values", indent_level=5, timer_name="init_values")
         # Calculate initial values
         x_min = padding
         x_max = self.width - padding
@@ -306,29 +459,34 @@ class GameGUI(arcade.Window):
         y_max = self.height - padding
 
         N, max_radius = _calculate_N_and_radius(lands, x_max, x_min, y_max, y_min)
-        print("Max Radius: ", max_radius)
+        self.logger.end_section(message="N = {}, Max Radius = {}. ".format(N, max_radius), timer_name="init_values")
 
         # Generating land center points
-        coords = _generate_points(max_radius, x_min, x_max, y_min, y_max, N)
+
+        coords = _generate_points(max_radius-20, x_min, x_max, y_min, y_max, N, self.logger)
+
+        self.logger.start_section("Finishing Initial Coordinates", indent_level=5, end='\n', timer_name="finish_coords")
         start_C = _get_top_left_point(coords)
         del coords[coords.index(start_C)]
         coords.insert(0, start_C)
-        print("Coords:")
+
+        self.logger.info("Coords:", indent_level=6)
         for C in coords:
-            print("\t[{},{}]".format(C[0], C[1]))
+            self.logger.info("[{},{}]".format(C[0], C[1]), indent_level=7)
             self.shape_list.append(arcade.create_ellipse_filled(C[0], C[1], 10, 10, arcade.color.BLACK))
 
-        print("Start Point: [{},{}]".format(start_C[0], start_C[1]))
+        self.logger.info("Start Point: [{},{}]".format(start_C[0], start_C[1]), indent_level=6)
         self.shape_list.append(arcade.create_ellipse_filled(start_C[0], start_C[1], 10, 10, arcade.color.RED))
+        self.logger.end_section(indent_level=5, timer_name="finish_coords")
 
         # Calculate best placement
-        best_permutation = _calculate_order(coords, N, land_distances)
+        best_permutation = _calculate_order(coords, N, land_distances, self.logger)
         
         self.order = best_permutation
         self.coords = coords
 
         # Generate subpoints
-        self.subcoords = _generate_points(50, x_min, x_max, y_min, y_max, 400, existing_points=coords)
+        self.subcoords = _generate_points(20, x_min, x_max, y_min, y_max, 600, self.logger, existing_points=coords)
         for ii in range(len(self.subcoords)-1, -1, -1):
             S = self.subcoords[ii]
             if S in coords:
@@ -338,7 +496,7 @@ class GameGUI(arcade.Window):
         self.allcoords = [*self.coords, *self.subcoords]
 
         # Ceate connections between subpoints
-        self.connection_list = _generate_connection_list(self.allcoords)
+        self.connection_list = _generate_connection_list(self.allcoords, self.logger)
         self.connection_map = _transform_connection_list_to_map(self.connection_list)
         for connection in self.connection_list:
             P1 = self.allcoords[connection[0]]
@@ -352,12 +510,14 @@ class GameGUI(arcade.Window):
             if index == -1:
                 print("Cannot find index!")
             node_connections.append({'index': index, 'connections': [self.allcoords.index(self.coords[self.order.index(x)]) for x in land_distances[o] if land_distances[o][x] == 1]})
-        paths = _build_paths(self.connection_map, node_connections)
+        paths = _build_paths(self.connection_map, node_connections, self.logger)
         for path in paths:
             for ii in range(1, len(path)):
                 P1 = self.allcoords[path[ii]]
                 P2 = self.allcoords[path[ii-1]]
                 self.linking_connections.append(arcade.create_line(P1[0], P1[1], P2[0], P2[1], arcade.color.RED, 3))
+
+        self.logger.end_section(indent_level=4, timer_name='voronoi')
 
 
 
@@ -397,340 +557,16 @@ class GameGUI(arcade.Window):
 
         draw_land_numbers(self.order, range(len(self.order)), self.coords)
 
-    def setup(self, G, padding=PADDING, spacing=SPACING, sq_size=SQUARE_SIZE):
-        """ Sets up gui
-
-            ### Arguments:
-                self<GameGUI>: self-reference
-                G<game>: game reference
-        """
-        self.shape_list = arcade.ShapeElementList()
-        self.all_connections = arcade.ShapeElementList()
-        self.linking_connections = arcade.ShapeElementList()
-
-        self.land_coords = {}
-        self.connections = []
-        self.last_land_coords = [None, None]
-        self.restrictions = []
-
-        for board_letter in G.boards:
-            board = G.boards[board_letter]
-            land_distances = board.get_land_distances()
-
-            self.voronoi_placements_fix(board.lands, land_distances, padding, spacing)
-
-            
-
-
-    def setup_old(self):
-        #self.voronoi_placements(board.lands, land_distances, padding, spacing)
-
-        #calculate_coords = self.calculate_placements(board.lands, land_distances, padding, spacing, sq_size)
-        #for land in calculate_coords:
-        #    self.shape_list.append(self.generate_land(board.lands[land], sq_size, [calculate_coords[land][0], calculate_coords[land][1]]))
-        
-        #for land_number in range(len(board.lands)):
-        #    land = board.lands[land_number]
-        #    land_coords = self.get_land_coords(padding, spacing, sq_size, land, land_distances)
-            
-        #    self.shape_list.append(self.generate_land(land, sq_size, land_coords))
-
-        #for connection in self.connections:
-        #    X, Y = connection
-        #    line = arcade.create_line(self.land_coords[X][0], self.land_coords[X][1], self.land_coords[Y][0], self.land_coords[Y][1], arcade.color.RED, 3)
-        #    self.connection_list.append(line)
-        pass
-
-    def draw_old(self):
-        #land_num = 0
-        #for land in self.best_permutation:
-        #    arcade.draw_text(str(land_num), self.final_coordinates[land][0] + 15, self.final_coordinates[land][1] + 15, arcade.color.WHITE, 14)
-        #    land_num += 1
-        #for ii in range(len(self.final_coordinates)):
-        #    arcade.draw_text(str(ii), self.final_coordinates[ii][0]+30, self.final_coordinates[ii][1]+30, arcade.color.ORANGE)
-        """
-        for ii in range(len(self.final_coordinates)):
-            for jj in range(ii+1, len(self.final_coordinates)):
-                iC = self.final_coordinates[ii]
-                jC = self.final_coordinates[jj]
-                arcade.draw_line(iC[0], iC[1], jC[0], jC[1], arcade.color.GRAY)
-                distance = GameGUI.calc_distance(iC, jC)
-                label_coord = [
-                    (max([iC[0], jC[0]]) - min([iC[0], jC[0]]))/2 + min([iC[0], jC[0]]),
-                    (max([iC[1], jC[1]]) - min([iC[1], jC[1]])/2) + min([iC[1], jC[1]])
-                ]
-                arcade.draw_text("{:.2f}".format(distance), label_coord[0], label_coord[1], arcade.color.ORANGE)
-        """
-        pass
-
-
-    def voronoi_placements(self, lands, land_distances, padding, spacing):
-        random.seed(a=10)
-        x_min = padding
-        x_max = self.width - padding
-        y_min = padding
-        y_max = self.height - padding
-
-        coords = []
-
-        for ii in range(len(lands)):
-            placed = False
-            while not placed:
-                placed = True
-                C = [random.randint(x_min, x_max), random.randint(y_min, y_max)]
-                for eC in coords:
-                    if GameGUI.calc_distance(eC, C) < (spacing):
-                        placed = False
-                        break
-                if placed:
-                    coords.append(C)
-                    self.shape_list.append(arcade.create_ellipse_filled(C[0], C[1], 10, 10, arcade.color.BLACK))
-        distances = np.zeros((len(coords), len(coords)))
-        for ii in range(len(coords)):
-            for jj in range(len(coords)):
-                if ii == jj:
-                    distances[ii][jj] = 0
-                else:
-                    distances[ii][jj] = GameGUI.calc_distance(coords[ii], coords[jj])
-
-
-        print("Coords: ")
-        for C in coords:
-            print("{}\t{}".format(C[0], C[1]))
-
-        L = list(permutations(range(len(lands))))
-        print("Number of permutations: {}".format(len(L)))
-
-        best_score = -1
-        best_permutation = None
-
-        def calc_score(perm, land_distances, distances):
-            #perm = (7,1,2,5,6,8,0,4,3)
-            # print("Try this")
-            score = 0
-            for land in land_distances:
-                dist_breakdown = {}
-                for nex_land in land_distances[land]:
-                    if land != nex_land:
-                        D = land_distances[land][nex_land]
-                        if not D in dist_breakdown:
-                            dist_breakdown[D] = []
-                        dist_breakdown[D].append(distances[perm.index(land)][perm.index(nex_land)])
-                keys = sorted(list(dist_breakdown.keys()))
-
-                consistent = True
-                prev_max = max(dist_breakdown[keys[0]])
-                for ii in range(1, len(keys)):
-                    cur_min = min(dist_breakdown[keys[ii]])
-                    if prev_max > cur_min:
-                        consistent = False
-                        #break
-                    else:
-                        score += 1
-                    prev_max = max(dist_breakdown[keys[ii]])
-                if consistent:
-                    score += 5             
-            return score
-        instance = 0
-        total = len(L)
-        for perm in L:
-            if instance % 1000 == 0:
-                log_lib.update_progress_bar(instance/total, "Scanning permutation #{}. Best Score={}...".format(instance, best_score), total_size=200)
-            instance += 1
-            score = calc_score(perm, land_distances, distances)
-            if score > best_score:
-                best_score = score
-                best_permutation = perm
-        log_lib.update_progress_bar(1, "Done. Best Score={}. Best Permutation = [{}]".format(best_score, ", ".join([str(x) for x in best_permutation]) ), total_size=200, end='\n')
-
-        self.best_permutation = best_permutation
-        self.final_coordinates = coords
-
-        
-
-        return None
-
-        
-
-    def calculate_placements(self, lands, land_distances, padding, spacing, sq_size):
-        x_min = padding
-        x_max = self.width - padding
-        y_min = padding
-        y_max = self.height - padding
-
-        MIN_DISTANCE = spacing
-        TRIALS = 10
-        STEP_SIZE = 1
-        MAX_MOVEMENT = spacing
-
-
-        coords = {}
-        coords[0] = [x_min, int(self.height/2)]
-        x_min += (spacing  + sq_size)
-        for land in range(1, len(lands)):
-            coords[land] = [random.randint(x_min, x_max), random.randint(y_min, y_max)]
-        
-        prev_values = {}
-        print("Initial")
-        for ii in range(len(coords)):
-            print("\t{}: [{},{}]".format(ii, coords[ii][0], coords[ii][1]))
-            prev_values[ii] = coords[ii]
-        base = np.array([[[x,y] for y in range(y_min, y_max, STEP_SIZE)] for x in range(x_min, x_max, STEP_SIZE)])
-        
-        """
-        distances = np.zeros((len(coords), len(coords)))
-        for ii in range(len(coords)):
-            for jj in range(len(coords)):
-                if ii == jj:
-                    distances[ii][jj] = 0
-                else:
-                    distances[ii][jj] = GameGUI.calc_distance(coords[ii], coords[jj])
-                    if distances[ii][jj] < MIN_DISTANCE:
-                        distances[ii][jj] = np.inf
-        """
-        for trial in range(TRIALS):
-            
-            land_order = list(range(1, len(coords)))
-            random.shuffle(land_order)
-            for ii in land_order:
-                P = coords[ii]
-                P_ymin = max([y_min, P[1] - MAX_MOVEMENT])
-                P_xmin = max([x_min, P[0] - MAX_MOVEMENT])
-                y_range = range(P_ymin, min([y_max, P[1]+MAX_MOVEMENT]), STEP_SIZE)
-                x_range = range(P_xmin, min([x_max, P[0]+MAX_MOVEMENT]), STEP_SIZE)
-                move_coords = np.array([[[x,y] for y in y_range] for x in x_range])
-
-                restriction_shortlist = []
-                for jj in range(len(coords)):
-                    if ii != jj:
-                        restriction_shortlist.append({'coords': coords[jj], 'distance': land_distances[ii][jj]*(spacing + sq_size)})
-                best_coords = None
-                total = np.zeros((move_coords.shape[0], move_coords.shape[1]))
-                for restriction in restriction_shortlist:
-                    C = restriction['coords']
-                    a = np.square(move_coords[:, :, 0] - C[0]) + np.square(move_coords[:, :, 1] - C[1])
-                    d = np.sqrt(a)
-
-                    d[d < restriction['distance']] -= 9000
-                    d[d < 0] *= (-1)
-
-                    total += d
-                best_coords = np.where(total == np.min(total))
-                best_coords = (best_coords[0][0] + P_xmin, best_coords[1][0] + P_ymin)
-
-                coords[ii] = best_coords
-            print("Trial #{}".format(trial))
-            for ii in range(len(coords)):
-                print("\t{}: [{},{}] d {:.2f}".format(ii, coords[ii][0], coords[ii][1], GameGUI.calc_distance(coords[ii], prev_values[ii])))
-                prev_values[ii] = coords[ii]
-            
-        return coords
-
-        
-         
-
-
-
-    def get_land_coords(self, padding, spacing, sq_size, land, land_distances):
-        """ Calculates land coords
-
-            ### Arguments:
-                self<GameGUI>: self-reference
-                padding<int>: padding to use
-                spacing<int>: spacing to use
-                sq_size<int>: square size
-                land<Land>: land coordinates
-                land_distances<dict>: distances in hops from one land to another
-        """
-
-        def calc_distance(coords1, coords2):
-            """ Calculates distance between two sets of coords
-
-                ### Arguments:
-                    coords1<tuple<float>>: first set of coords, X, Y
-                    coords2<tuple<float>>: second set of coords X, Y
-                
-                ### Returns:
-                    distance<float>: distance between coords
-            """
-            return math.sqrt(math.pow(coords1[0] - coords2[0], 2) + math.pow(coords1[1] - coords2[1], 2))
-
-        D = land.asdict()
-        
-        if len(self.restrictions) == 0:
-            X = padding
-            Y = int(self.height /2)
-            self.restrictions.append({'number': D['number'], 'coords': (X,Y)})
-        else:
-            min_X = self.restrictions[0]['coords'][0] + land_distances[D['number']][self.restrictions[0]['number']]*(spacing + sq_size)
-            max_X = self.width - padding
-            min_Y = padding
-            max_Y = self.height - padding
-
-            restriction_shortlist = []
-            for restriction in self.restrictions:
-                restriction_shortlist.append({'coords': restriction['coords'], 'distance': land_distances[D['number']][restriction['number']]*(spacing+sq_size)})
-            
-            best_coords = None
-
-            base = np.array([[[x,y] for y in range(min_Y, max_Y, STEP_SIZE)] for x in range(min_X, max_X, STEP_SIZE)])
-            total = np.zeros((base.shape[0], base.shape[1]))
-            for restriction in restriction_shortlist:
-                C = restriction['coords']
-                a = np.square(base[:,:,0] - C[0]) + np.square(base[:,:,1] - C[1])
-                d = np.sqrt(a)
-                d[d < restriction['distance']] = np.inf
-                total += d
-            best_coords = np.where(total == np.min(total))
-            best_coords = (best_coords[0][0]+min_X, best_coords[1][0]+min_Y)
-
-            if best_coords is not None:
-                X = best_coords[0]
-                Y = best_coords[1]
-                self.restrictions.append({'number': D['number'], 'coords': (X, Y)})
-            else:
-                print("Could not find location!!!!")
-        return X, Y
-
-    def add_connections(self, origin, C):
-        """ Adds land connections 
-
-            ### Arguments:
-                self<GameGUI>: self-reference
-                origin<int>: original land
-                C<list<int>>: connectioned lands
-        """
-        for connection in C:
-            if origin != connection:
-                NC = [min([origin, connection]), max([origin, connection])]
-                if not NC in self.connections:
-                    self.connections.append(NC)
-        
-
-    def generate_land(self, land, sq_size, coords):
-        """ Generates a land rectangle
-
-            ### Arguments:
-                self<GameGUI>: self-reference
-                land<Land>: land object
-                sq_size<int>: square size
-                coords<tuple<float>>: tuple of coords
-
-            ### Returns:
-                shape<arcade Object>: arcade shape
-        """
-        D = land.asdict()
-        shape = arcade.create_rectangle_filled(coords[0], coords[1], sq_size, sq_size, self.LAND_COLORS[D['land_type']])
-        self.land_coords[D['number']] = [coords[0], coords[1]]
-        self.add_connections(D['number'], D['connected_lands'])
-        return shape
+    
 
 def launch(G):
     """ Launches the GUI 
         
         G<game>: game reference to build
     """
-    gameGUI = GameGUI(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE)
-    gameGUI.setup(G)
+    gameGUI = GameGUI(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_TITLE, G)
+    gameGUI.setup()
+
+    gameGUI.logger.end_section(timer_name="create_display")
     arcade.run()
         
