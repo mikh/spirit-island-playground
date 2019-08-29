@@ -235,12 +235,18 @@ def _matches_any_connection(new_l, connection_list, coords):
             return True
     return False
 
-def _generate_connection_list(coords, logger, num_connections=8):
+def _generate_connection_list(coords, logger, num_connections=8, source_coords=None, existing_connections=None):
     intersected_connections = 0
     connection_list = []
+    if existing_connections is not None:
+        connection_list = existing_connections
     distances = _calculate_distances(coords, len(coords))
 
-    for P in range(len(coords)):
+    source = range(len(coords))
+    if source_coords is not None:
+        source = source_coords
+
+    for P in source:
         logger.progress(P/len(coords), "Generating edges for {}. {} current connections. {} intersected connections".format(P, len(connection_list), intersected_connections), indent_level=5, total_size=150)
         D = distances[P, :]
         E = sorted([[D[ii], ii] for ii in range(len(D))], key=lambda x: x[0])
@@ -486,7 +492,7 @@ class GameGUI(arcade.Window):
         self.coords = coords
 
         # Generate subpoints
-        self.subcoords = _generate_points(20, x_min, x_max, y_min, y_max, 600, self.logger, existing_points=coords)
+        self.subcoords = _generate_points(20, x_min/2, x_max+(x_min/2), y_min/2, y_max+(y_min/2), 700, self.logger, existing_points=coords)
         for ii in range(len(self.subcoords)-1, -1, -1):
             S = self.subcoords[ii]
             if S in coords:
@@ -496,7 +502,8 @@ class GameGUI(arcade.Window):
         self.allcoords = [*self.coords, *self.subcoords]
 
         # Ceate connections between subpoints
-        self.connection_list = _generate_connection_list(self.allcoords, self.logger)
+        self.connection_list = _generate_connection_list(self.allcoords, self.logger, source_coords=range(len(self.coords)), num_connections=8)
+        self.connection_list = _generate_connection_list(self.allcoords, self.logger, existing_connections=self.connection_list, source_coords=range(len(self.coords), len(self.allcoords)), num_connections=4)
         self.connection_map = _transform_connection_list_to_map(self.connection_list)
         for connection in self.connection_list:
             P1 = self.allcoords[connection[0]]
