@@ -53,11 +53,11 @@ def _generate_points(max_radius, x_min, x_max, y_min, y_max, N, logger, existing
         ### Returns:
             coords<list<list<float>>>: list of point coordinates
     """
-
-    if existing_points is not None:
-        coords = existing_points.copy()
+    if existing_points is None:
+        existing_points = []
     else:
-        coords = []
+        existing_points = existing_points.copy()
+    coords = []
 
     for ii in range(N):
         logger.progress(ii/N, "Creating point #{}".format(ii+1), indent_level=5, total_size=120)
@@ -66,12 +66,13 @@ def _generate_points(max_radius, x_min, x_max, y_min, y_max, N, logger, existing
         while not placed:
             placed = True
             C = [random.randint(x_min, x_max), random.randint(y_min, y_max)]
-            for eC in coords:
+            for eC in existing_points:
                 if _calc_distance(eC, C) < max_radius:
                     placed = False
                     break
             if placed:
                 coords.append(C)
+                existing_points.append(C)
     logger.progress(1, "Done. Created {} points.".format(N), indent_level=5, total_size=120, finish=True)
     return coords
 
@@ -526,21 +527,33 @@ class GameGUI(arcade.Window):
         
         # Generate outside points
         self.all_outside_points = []
-        outside_points = _generate_points(15, 1, x_min/2, 1, y_max-1, 25, self.logger, existing_points=self.allcoords)
+        self.non_outside_points = self.allcoords.copy()
+        outside_points = _generate_points(15, 1, x_min/2, 1, self.height-1, 25, self.logger, existing_points=self.allcoords)
         self.allcoords.extend(outside_points)
         self.all_outside_points.extend(outside_points)
-        outside_points = _generate_points(15, x_max-(x_min/2), x_max-1, 1, y_max-1, 25, self.logger, existing_points=self.allcoords)
+        outside_points = _generate_points(15, self.width-(x_min/2), self.width-1, 1, self.height-1, 25, self.logger, existing_points=self.allcoords)
         self.allcoords.extend(outside_points)
         self.all_outside_points.extend(outside_points)
-        outside_points = _generate_points(15, 1, x_max-1, 1, y_min/2, 25, self.logger, existing_points=self.allcoords)
+        outside_points = _generate_points(15, 1, self.width-1, 1, y_min/2, 25, self.logger, existing_points=self.allcoords)
         self.allcoords.extend(outside_points)
         self.all_outside_points.extend(outside_points)
-        outside_points = _generate_points(15, 1, x_max-1, y_max-(y_min/2), y_max-1, 25, self.logger, existing_points=self.allcoords)
+        outside_points = _generate_points(15, 1, self.width-1, self.height-(y_min/2), self.height-1, 25, self.logger, existing_points=self.allcoords)
         self.allcoords.extend(outside_points)
         self.all_outside_points.extend(outside_points)
 
+        start_index = len(self.connection_list)
         for C in self.all_outside_points:
             self.shape_list.append(arcade.create_ellipse_filled(C[0], C[1], 1,1, arcade.color.GREEN))
+            temp = [*self.non_outside_points, C]
+            self.connection_list = _generate_connection_list(temp, self.logger, source_coords=[len(temp)-1], existing_connections=self.connection_list, num_connections=3)
+
+        for index in range(start_index, len(self.connection_list)):
+            connection = self.connection_list[index]
+            P1 = self.allcoords[connection[0]]
+            P2 = self.allcoords[connection[1]]
+            self.all_connections.append(arcade.create_line(P1[0], P1[1], P2[0], P2[1], arcade.color.YELLOW))   
+        
+
 
         self.logger.end_section(indent_level=4, timer_name='voronoi')
 
