@@ -523,6 +523,24 @@ class GameGUI(arcade.Window):
                 P1 = self.allcoords[path[ii]]
                 P2 = self.allcoords[path[ii-1]]
                 self.linking_connections.append(arcade.create_line(P1[0], P1[1], P2[0], P2[1], arcade.color.RED, 3))
+        
+        # Generate outside points
+        self.all_outside_points = []
+        outside_points = _generate_points(15, 1, x_min/2, 1, y_max-1, 25, self.logger, existing_points=self.allcoords)
+        self.allcoords.extend(outside_points)
+        self.all_outside_points.extend(outside_points)
+        outside_points = _generate_points(15, x_max-(x_min/2), x_max-1, 1, y_max-1, 25, self.logger, existing_points=self.allcoords)
+        self.allcoords.extend(outside_points)
+        self.all_outside_points.extend(outside_points)
+        outside_points = _generate_points(15, 1, x_max-1, 1, y_min/2, 25, self.logger, existing_points=self.allcoords)
+        self.allcoords.extend(outside_points)
+        self.all_outside_points.extend(outside_points)
+        outside_points = _generate_points(15, 1, x_max-1, y_max-(y_min/2), y_max-1, 25, self.logger, existing_points=self.allcoords)
+        self.allcoords.extend(outside_points)
+        self.all_outside_points.extend(outside_points)
+
+        for C in self.all_outside_points:
+            self.shape_list.append(arcade.create_ellipse_filled(C[0], C[1], 1,1, arcade.color.GREEN))
 
         self.logger.end_section(indent_level=4, timer_name='voronoi')
 
