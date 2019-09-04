@@ -10,6 +10,8 @@ from itertools import permutations
 from Digital_Library.lib import math_lib
 from Digital_Library.lib import log_lib
 
+import gui_node
+
 SCREEN_WIDTH = 1200
 SCREEN_HEIGHT = 800
 SCREEN_TITLE = 'Spirit Island Playground'
@@ -236,7 +238,8 @@ def _matches_any_connection(new_l, connection_list, coords):
             return True
     return False
 
-def _generate_connection_list(coords, logger, num_connections=8, source_coords=None, existing_connections=None):
+def _generate_connection_list(coords, logger, num_connections=8, source_coords=None, existing_connections=None, check_intersections=True, source_coord_exclusivity=False):
+    """ source_coord_exclusivity : source coords can't connect to each other """
     intersected_connections = 0
     connection_list = []
     if existing_connections is not None:
@@ -251,13 +254,18 @@ def _generate_connection_list(coords, logger, num_connections=8, source_coords=N
         logger.progress(P/len(coords), "Generating edges for {}. {} current connections. {} intersected connections".format(P, len(connection_list), intersected_connections), indent_level=5, total_size=150)
         D = distances[P, :]
         E = sorted([[D[ii], ii] for ii in range(len(D))], key=lambda x: x[0])
-        for ii in range(1, num_connections+1):
-            C = sorted([P, E[ii][1]])
-            if not C in connection_list:
-                if not _matches_any_connection(C, connection_list, coords):
-                    connection_list.append(C)
-                else:
-                    intersected_connections += 1
+        connections_obtained = 0
+        ii = 1
+        while connections_obtained < num_connections:
+            if not source_coord_exclusivity or not E[ii][1] in source:
+                C = sorted([P, E[ii][1]])
+                if not C in connection_list:
+                    if not check_intersections or not _matches_any_connection(C, connection_list, coords):
+                        connection_list.append(C)
+                    else:
+                        intersected_connections += 1
+                connections_obtained += 1
+            ii += 1
     logger.progress(1, "Edges generated. {} connections total. {} intersected connections".format(len(connection_list), intersected_connections), indent_level=5, total_size=150, finish=True)
     return connection_list 
 
@@ -542,23 +550,69 @@ class GameGUI(arcade.Window):
         self.all_outside_points.extend(outside_points)
 
         start_index = len(self.connection_list)
+        self.connection_list = _generate_connection_list(self.allcoords, self.logger, source_coords=list(range(len(self.non_outside_points), len(self.allcoords))), existing_connections=self.connection_list, num_connections=3, check_intersections=False, source_coord_exclusivity=True)
         for C in self.all_outside_points:
             self.shape_list.append(arcade.create_ellipse_filled(C[0], C[1], 1,1, arcade.color.GREEN))
-            temp = [*self.non_outside_points, C]
-            self.connection_list = _generate_connection_list(temp, self.logger, source_coords=[len(temp)-1], existing_connections=self.connection_list, num_connections=3)
 
         for index in range(start_index, len(self.connection_list)):
             connection = self.connection_list[index]
             P1 = self.allcoords[connection[0]]
             P2 = self.allcoords[connection[1]]
             self.all_connections.append(arcade.create_line(P1[0], P1[1], P2[0], P2[1], arcade.color.YELLOW))   
+
+        self.logger.start_section("Converting to node structure", indent_level=5, timer_name="node_conversion", end='\n')
+        nodes = {}
+        for ii in range(len(self.allcoords)):
+            self.logger.progress(ii/len(self.allcoords), "Creating node for [{},{}]...".format(self.allcoords[ii][0], self.allcoords[ii][1]), total_size=120, indent_level=6)
+            nodes[ii] = gui_node.GuiNode(self.allcoords[ii])
+        self.logger.progress(1, "Created {} nodes.".format(len(self.allcoords)), indent_level=6, total_size=120, finish=True)
+
+        instance = 0
+        total = len(self.coords)
+        for C, o_n in zip(self.coords, self.order):
+            self.logger.progress(instance/total, "Assigning centerpoint node {}".format(o_n), total_size=120, indent_level=6)
+            instance += 1
+            index = self.allcoords.index(C)
+            nodes[index].assign(o_n)
+        self.logger.progress(1, "Assigned centerpoint {} nodes".format(total), total_size=120, indent_level=6, finish=True)
+
+        instance = 0
+        total = len(self.all_outside_points)
+        for C in self.all_outside_points:
+            self.logger.progress(instance/total, "Assigning outside node [{}, {}]".format(C[0], C[1]), total_size=120, indent_level=6)
+            instance += 1
+            nodes[self.allcoords.index(C)].assign(-1)      
+        self.logger.progress(1, "Assigned {} outside nodes.".format(total), total_size=120, indent_level=6, finish=True)
+
+        instance = 0
+        total = len(paths)
+        for path in paths:
+            self.logger.progress(instance/total, "Assigning path from {} -> {}".format(path[0], path[-1]), total_size=120, indent_level=6)
+            instance += 1
+
+            S = path[0]
+            E = path[-1]
+
+            for P in path[1:-1]:
+                target = S
+                if _calc_distance(self.allcoords[P], self.allcoords[S]) > _calc_distance(self.allcoords[P], self.allcoords[E]):
+                    target = E
+                nodes[P].assign(nodes[target].assignment)
+        self.logger.progress(1, "Assigned {} paths".format(total), indent_level=6, total_size=120, finish=True)
+
+        for ii in range(len(self.connection_list)):
+            self.logger.progress(ii/len(self.connection_list), "Adding connections...", total_size=120, indent_level=6)
+            C = self.connection_list[ii]
+            nodes[C[0]].connect(nodes[C[1]])
+        self.logger.progress(1, "Added {} connections.".format(len(self.connection_list)), total_size=120, indent_level=6, finish=True)
+
+        self.logger.end_section(timer_name="node_conversion", indent_level=5)
+
+        gui_node.assign_nodes(nodes, self.logger, indent_level=5)
         
 
 
         self.logger.end_section(indent_level=4, timer_name='voronoi')
-
-
-
 
     def on_draw(self):
         """ Draws the GUI
