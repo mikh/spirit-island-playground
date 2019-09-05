@@ -11,6 +11,7 @@ from Digital_Library.lib import math_lib
 from Digital_Library.lib import log_lib
 
 import gui_node
+from models.land import LandTypes
 
 SCREEN_WIDTH = 1200
 SCREEN_HEIGHT = 800
@@ -415,7 +416,7 @@ class GameGUI(arcade.Window):
         super().__init__(width, height, title)
         self.width = width
         self.height = height
-        arcade.set_background_color(arcade.color.DARK_BLUE)
+        arcade.set_background_color(arcade.color.DARK_BLUE_GRAY)
 
         self.shape_list = None
         self.logger.end_section(timer_name="construct_class")
@@ -435,6 +436,9 @@ class GameGUI(arcade.Window):
         self.shape_list = arcade.ShapeElementList()
         self.all_connections = arcade.ShapeElementList()
         self.linking_connections = arcade.ShapeElementList()
+        self.direct_paths = arcade.ShapeElementList()
+        self.big_circle_shape_list = arcade.ShapeElementList()
+        self.all_points_shapes = arcade.ShapeElementList()
 
         self.land_coords = {}
         self.connections = []
@@ -531,7 +535,7 @@ class GameGUI(arcade.Window):
             for ii in range(1, len(path)):
                 P1 = self.allcoords[path[ii]]
                 P2 = self.allcoords[path[ii-1]]
-                self.linking_connections.append(arcade.create_line(P1[0], P1[1], P2[0], P2[1], arcade.color.RED, 3))
+                self.direct_paths.append(arcade.create_line(P1[0], P1[1], P2[0], P2[1], arcade.color.RED, 3))
         
         # Generate outside points
         self.all_outside_points = []
@@ -609,10 +613,120 @@ class GameGUI(arcade.Window):
         self.logger.end_section(timer_name="node_conversion", indent_level=5)
 
         gui_node.assign_nodes(nodes, self.logger, indent_level=5)
+        self.nodes = nodes
         
+        """
+        colors = {
+            -1: arcade.color.DARK_BLUE_GRAY
+        }
+        for land in lands:
+            land = lands[land]
+            number = land.number
+            if land.land_type == LandTypes.OCEAN:
+                color = arcade.color.DARK_BLUE
+            elif land.land_type == LandTypes.WETLANDS:
+                color = arcade.color.BABY_BLUE
+            elif land.land_type == LandTypes.JUNGLE:
+                color = arcade.color.ARMY_GREEN
+            elif land.land_type == LandTypes.MOUNTAIN:
+                color = arcade.color.BISTRE_BROWN
+            elif land.land_type == LandTypes.SANDS:
+                color = arcade.color.BRONZE_YELLOW
+            colors[number] = color
+
+        for node in nodes:
+            assignment = nodes[node].assignment
+            if assignment == -1:
+                self.big_circle_shape_list.append(arcade.create_ellipse_filled(nodes[node].X, nodes[node].Y, 40, 40, colors[assignment]))    
+
+        for node in nodes:
+            assignment = nodes[node].assignment
+            if assignment != -1:
+                self.big_circle_shape_list.append(arcade.create_ellipse_filled(nodes[node].X, nodes[node].Y, 40, 40, colors[assignment]))
+
+        #instance = 0
+        #total = self.width*self.height
+        #for x in range(0, self.width):
+        #    for y in range(0, self.height):
+        #        if instance %100 == 0:
+        """
+        self.build_image(lands)
+
+
 
 
         self.logger.end_section(indent_level=4, timer_name='voronoi')
+
+    def build_image(self, lands):
+        """ Builds the final image
+
+            ### Arguments:
+                self<GameGUI>: self-reference
+                lands<dict<Land>>: lands
+        """
+        self.logger.start_section("Building Image", indent_level=5, timer_name="build_image", end='\n')
+
+        self.logger.start_section("Making colormap", indent_level=6, timer_name="making_color_map")
+        colors = {
+            -1: arcade.color.DARK_BLUE_GRAY
+        }
+        for land in lands:
+            land = lands[land]
+            number = land.number
+            if land.land_type == LandTypes.OCEAN:
+                color = arcade.color.DARK_BLUE
+            elif land.land_type == LandTypes.WETLANDS:
+                color = arcade.color.BABY_BLUE
+            elif land.land_type == LandTypes.JUNGLE:
+                color = arcade.color.ARMY_GREEN
+            elif land.land_type == LandTypes.MOUNTAIN:
+                color = arcade.color.BISTRE_BROWN
+            elif land.land_type == LandTypes.SANDS:
+                color = arcade.color.BRONZE_YELLOW
+            colors[number] = color
+        self.logger.end_section(timer_name="making_color_map")
+
+        instance = 0
+        total = self.width * self.height
+        points_created = 0
+        for x in range(0, self.width):
+            for y in range(0, self.height):
+                if instance % 10 == 0:
+                    self.logger.progress(instance/total, "Creating point at [{}, {}]...".format(x, y), indent_level=6, total_size=150)
+                instance += 1
+
+                distances = []
+                for node in self.nodes:
+                    distances.append([
+                        int(_calc_distance([x, y], [self.nodes[node].X, self.nodes[node].Y])),
+                        self.nodes[node].assignment
+                    ])
+                distances = sorted(distances, key=lambda x:x[0])
+                min_distance = distances[0][0]
+                assignments = [distances[0][1]]
+                for ii in range(1, len(distances)):
+                    if distances[ii][0] == min_distance:
+                        assignments.append(distances[ii][1])
+                    else:
+                        break
+                assignments = list(set(assignments))
+                if len(assignments) > 1:
+                    color = arcade.color.BLACK
+                else:
+                    assignment = assignments[0]
+                    if assignment == -1:
+                        color = None
+                    else:
+                        color = colors[assignment]
+                if color is not None:
+                    self.all_points_shapes.append(arcade.create_rectangle_filled(x, y, 1, 1, color))
+        
+        self.logger.progress(1, "Created {} points.".format(points_created), total_size=150, indent_level=6)
+
+
+
+
+        self.logger.end_section(indent_level=5, timer_name="build_image")
 
     def on_draw(self):
         """ Draws the GUI
@@ -643,11 +757,14 @@ class GameGUI(arcade.Window):
 
         arcade.start_render()
 
-        self.shape_list.draw()
-        self.all_connections.draw()
-        self.linking_connections.draw()
+        #self.shape_list.draw()
+        #self.all_connections.draw()
+        #self.linking_connections.draw()
 
-        draw_land_numbers(self.order, range(len(self.order)), self.coords)
+        #draw_land_numbers(self.order, range(len(self.order)), self.coords)
+        #self.big_circle_shape_list.draw()
+        #self.direct_paths.draw()
+        self.all_points_shapes.draw()
 
     
 
