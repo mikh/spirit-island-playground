@@ -73,6 +73,22 @@ class GuiNode():
                 best_score = labels[label]
                 best_label = label
         self.assign(best_label)
+
+    def within_range(self, x, y, r=50):
+        """ Checks if a node is within an r radius box of x,y
+
+            ### Arguments:
+                self<GuiNode>: self-reference
+                x<float>: x start
+                y<float>: y start
+                r<float>: radius
+
+            ### Returns:
+                within<boolean>: if within, return True
+        """
+        if self.X > x-r and self.X < x+r and self.Y > y-r and self.Y < y+r:
+            return True
+        return False
                 
 
 def assign_nodes(nodes, logger, indent_level=6):

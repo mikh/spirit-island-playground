@@ -6,6 +6,7 @@ import random
 from timeit import default_timer as timer
 import numpy as np
 from itertools import permutations
+from PIL import Image
 
 from Digital_Library.lib import math_lib
 from Digital_Library.lib import log_lib
@@ -668,27 +669,28 @@ class GameGUI(arcade.Window):
 
         self.logger.start_section("Making colormap", indent_level=6, timer_name="making_color_map")
         colors = {
-            -1: arcade.color.DARK_BLUE_GRAY
+            -1: (153, 0, 153)
         }
         for land in lands:
             land = lands[land]
             number = land.number
             if land.land_type == LandTypes.OCEAN:
-                color = arcade.color.DARK_BLUE
+                color = (0, 0, 102)
             elif land.land_type == LandTypes.WETLANDS:
-                color = arcade.color.BABY_BLUE
+                color = (102, 178, 255)
             elif land.land_type == LandTypes.JUNGLE:
-                color = arcade.color.ARMY_GREEN
+                color = (76, 153, 0)
             elif land.land_type == LandTypes.MOUNTAIN:
-                color = arcade.color.BISTRE_BROWN
+                color = (96, 96, 96)
             elif land.land_type == LandTypes.SANDS:
-                color = arcade.color.BRONZE_YELLOW
+                color = (255, 153, 51)
             colors[number] = color
         self.logger.end_section(timer_name="making_color_map")
 
         instance = 0
         total = self.width * self.height
         points_created = 0
+        image_matrix = np.array((self.width, self.height))
         for x in range(0, self.width):
             for y in range(0, self.height):
                 if instance % 10 == 0:
@@ -697,10 +699,13 @@ class GameGUI(arcade.Window):
 
                 distances = []
                 for node in self.nodes:
-                    distances.append([
-                        int(_calc_distance([x, y], [self.nodes[node].X, self.nodes[node].Y])),
-                        self.nodes[node].assignment
-                    ])
+                    if self.nodes[node].within_range(x, y, r=50):
+                        distances.append([
+                            int(_calc_distance([x, y], [self.nodes[node].X, self.nodes[node].Y])),
+                            self.nodes[node].assignment
+                        ])
+                if len(distances) == 0:
+                    print("r is TOO SMALL")
                 distances = sorted(distances, key=lambda x:x[0])
                 min_distance = distances[0][0]
                 assignments = [distances[0][1]]
@@ -711,7 +716,7 @@ class GameGUI(arcade.Window):
                         break
                 assignments = list(set(assignments))
                 if len(assignments) > 1:
-                    color = arcade.color.BLACK
+                    color = (0,0,0)
                 else:
                     assignment = assignments[0]
                     if assignment == -1:
@@ -719,9 +724,13 @@ class GameGUI(arcade.Window):
                     else:
                         color = colors[assignment]
                 if color is not None:
-                    self.all_points_shapes.append(arcade.create_rectangle_filled(x, y, 1, 1, color))
+                    image_matrix[x][y] = color
+                    #self.all_points_shapes.append(arcade.create_rectangle_filled(x, y, 1, 1, color))
         
         self.logger.progress(1, "Created {} points.".format(points_created), total_size=150, indent_level=6)
+
+        i = Image.fromarray(image_matrix)
+        i.save('temp.png')
 
 
 
