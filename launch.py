@@ -17,7 +17,7 @@ def main(num_boards):
     G = game.Game(int(num_boards))
     with open(os.path.join('output', 'game.json'), 'w') as f:
         json.dump(G.asdict(), f, sort_keys=True, indent=4)
-    G.display()
+    G.gen_image()
 
 
 

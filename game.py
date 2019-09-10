@@ -4,6 +4,7 @@ from Digital_Library.lib import log_lib
 
 import models.board as board
 import GameGUI
+import graphics
 
 class Game():
     """ Game Controller """
@@ -37,6 +38,14 @@ class Game():
             self.boards[board_letters[board_index]] = board.Board(board_letters[board_index])
 
         self.logger.end_section(timer_name="build_boards")
+
+    def gen_image(self):
+        """ Generates an image without displaying arcade
+
+            ### Arguments:
+                self<Game>: self-reference
+        """
+        graphics.voronoi_generation(1200, 800, self.logger, self.boards)
 
     def display(self):
         """ Displays the game as an arcade board 
