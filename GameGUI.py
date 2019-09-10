@@ -7,6 +7,7 @@ from timeit import default_timer as timer
 import numpy as np
 from itertools import permutations
 from PIL import Image
+import threading
 
 from Digital_Library.lib import math_lib
 from Digital_Library.lib import log_lib
@@ -690,50 +691,63 @@ class GameGUI(arcade.Window):
         instance = 0
         total = self.width * self.height
         points_created = 0
-        image_matrix = np.array((self.width, self.height))
-        for x in range(0, self.width):
-            for y in range(0, self.height):
-                if instance % 10 == 0:
-                    self.logger.progress(instance/total, "Creating point at [{}, {}]...".format(x, y), indent_level=6, total_size=150)
-                instance += 1
+        image_matrix = np.zeros((self.width, self.height,3))
 
-                distances = []
-                for node in self.nodes:
-                    if self.nodes[node].within_range(x, y, r=50):
-                        distances.append([
-                            int(_calc_distance([x, y], [self.nodes[node].X, self.nodes[node].Y])),
-                            self.nodes[node].assignment
-                        ])
-                if len(distances) == 0:
-                    print("r is TOO SMALL")
-                distances = sorted(distances, key=lambda x:x[0])
-                min_distance = distances[0][0]
-                assignments = [distances[0][1]]
-                for ii in range(1, len(distances)):
-                    if distances[ii][0] == min_distance:
-                        assignments.append(distances[ii][1])
+        def _image_worker(start_x, end_x, start_y, end_y, nodes, image_matrix):
+            for x in range(start_x, end_x):
+                for y in range(start_y, end_y):
+                    
+                    distances = []
+                    for node in nodes:
+                        if nodes[node].within_range(x, y, r=100):
+                            distances.append([
+                                int(_calc_distance([x, y], [nodes[node].X, nodes[node].Y])),
+                                nodes[node].assignment
+                            ])
+                    if len(distances) == 0:
+                        print("r is TOO SMALL")
+                    distances = sorted(distances, key=lambda x:x[0])
+                    min_distance = distances[0][0]
+                    assignments = [distances[0][1]]
+                    for ii in range(1, len(distances)):
+                        if distances[ii][0] == min_distance:
+                            assignments.append(distances[ii][1])
+                        else:
+                            break
+                    assignments = list(set(assignments))
+                    if len(assignments) > 1:
+                        color = (0,0,0)
                     else:
-                        break
-                assignments = list(set(assignments))
-                if len(assignments) > 1:
-                    color = (0,0,0)
-                else:
-                    assignment = assignments[0]
-                    if assignment == -1:
-                        color = None
-                    else:
+                        assignment = assignments[0]
                         color = colors[assignment]
-                if color is not None:
-                    image_matrix[x][y] = color
-                    #self.all_points_shapes.append(arcade.create_rectangle_filled(x, y, 1, 1, color))
+                    if color is not None:
+                        image_matrix[x][y][0] = color[0]
+                        image_matrix[x][y][1] = color[1]
+                        image_matrix[x][y][2] = color[2]
+                        #self.all_points_shapes.append(arcade.create_rectangle_filled(x, y, 1, 1, color))
         
-        self.logger.progress(1, "Created {} points.".format(points_created), total_size=150, indent_level=6)
+        OFFSET = 100
+        threads = []
 
+        for x in range(0, self.width, OFFSET):
+            for y in range(0, self.height, OFFSET):
+                self.logger.progress((x*self.height + y)/total, "Starting thread for [{}, {}]...".format(x, y), indent_level=6, total_size=150)
+                thread = threading.Thread(target=_image_worker, args=(x, x+OFFSET, y, y+OFFSET, self.nodes, image_matrix,))
+                threads.append(thread)
+                thread.start()
+        self.logger.progress(1, "Started {} threads.".format(len(threads)), indent_level=6, total_size=150, finish=True)
+
+        threads_complete = 0
+        while threads_complete < len(threads):
+            threads_complete = 0
+            for thread in threads:
+                if not thread.isAlive():
+                    threads_complete += 1
+            self.logger.progress(threads_complete/len(threads), "{} of {} threads complete.".format(threads_complete, len(threads)), indent_level=6, total_size=150)
+        self.logger.progress(1, "All threads complete.", indent_level=6, total_size=150, finish=True)
+        
         i = Image.fromarray(image_matrix)
         i.save('temp.png')
-
-
-
 
         self.logger.end_section(indent_level=5, timer_name="build_image")
 
