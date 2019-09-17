@@ -4,7 +4,11 @@ import graphics_api
 
 PADDING = 100
 TIMER_TEST = True
-TIMING_ITERATIONS = 50
+TIMING_ITERATIONS = 20
+
+THREAD_COUNT_TEST = True
+MIN_THREADS = 1
+MAX_THREADS = 100
 
 CENTERPOINT_RADIUS_OFFSET = 25
 
@@ -25,42 +29,59 @@ def voronoi_generation(width, height, logger, boards):
         board = boards[board_letter]
         land_distances = board.get_land_distances()
 
-        if TIMER_TEST:
-            all_timers = {}
-            failure_rate = 0
-            failure_messages = {}
-            for _ in range(TIMING_ITERATIONS):
-                timers = voronoi(board.lands, land_distances, (width, height), logger)
-                if not isinstance(timers, dict):
-                    failure_rate += 1
-                    if not timers in failure_messages:
-                        failure_messages[timers] = 0
-                    failure_messages[timers] += 1
-                else:
-                    for timer in timers:
-                        if not timer in all_timers:
-                            all_timers[timer] = 0
-                        all_timers[timer] += timers[timer]
+        if THREAD_COUNT_TEST:
+            global MAX_THREAD_COUNT
+            thread_timers = {}
+            for MAX_THREAD_COUNT in range(MIN_THREADS, MAX_THREADS):
 
-            print("\n\n")
-            print("-"*60)
-            print("Timing Test Results:")
-            print("")
-            if len(failure_messages) > 0:
-                print("\tFailures:")
-                print("")
-                print("\t\tFailure Rate: {:.2%}".format(failure_rate/TIMING_ITERATIONS))
-                for failure_message in failure_messages:
-                    print("\t\t{} : {}".format(failure_message, failure_messages[failure_message]))
 
-                print("\n\n")
-            print("\tTiming Stats:")
-            print("")
-            for timer in all_timers:
-                print("\t\t{} : {:.2f}s".format(timer, all_timers[timer]/TIMING_ITERATIONS))
-            print("\n")
-            print("-"*60)
+                if TIMER_TEST:
+                    all_timers = {}
+                    failure_rate = 0
+                    failure_messages = {}
+                    for _ in range(TIMING_ITERATIONS):
+                        timers = voronoi(board.lands, land_distances, (width, height), logger)
+                        if not isinstance(timers, dict):
+                            failure_rate += 1
+                            if not timers in failure_messages:
+                                failure_messages[timers] = 0
+                            failure_messages[timers] += 1
+                        else:
+                            for timer in timers:
+                                if not timer in all_timers:
+                                    all_timers[timer] = 0
+                                all_timers[timer] += timers[timer]
+
+                    print("\n\n")
+                    print("-"*60)
+                    print("Timing Test Results:")
+                    print("")
+                    if len(failure_messages) > 0:
+                        print("\tFailures:")
+                        print("")
+                        print("\t\tFailure Rate: {:.2%}".format(failure_rate/TIMING_ITERATIONS))
+                        for failure_message in failure_messages:
+                            print("\t\t{} : {}".format(failure_message, failure_messages[failure_message]))
+
+                        print("\n\n")
+                    print("\tTiming Stats:")
+                    print("")
+                    for timer in all_timers:
+                        print("\t\t{} : {:.2f}s".format(timer, all_timers[timer]/TIMING_ITERATIONS))
+                    print("\n")
+                    print("-"*60)
+                    print("\n\n")
+                    thread_timers[MAX_THREAD_COUNT] = all_timers['Best Permutation Selection']
             print("\n\n")
+            print("*"*60)
+            print("Thread timings:")
+            full = []
+            for ii in range(MIN_THREADS, MAX_THREADS):
+                full.append([ii, thread_timers[ii]])
+                print("\t{} : {:.2f}s".format(ii, thread_timers[ii]))
+            full.sort(key=lambda x:x[1])
+            print("Best thread number: {} at {:.2f}s".format(full[0][0], full[0][1]))
+        
         else:
             voronoi(board.lands, land_distances, (width, height), logger)
 
@@ -69,6 +90,7 @@ def voronoi_generation(width, height, logger, boards):
 
 
 def voronoi(lands, land_distances, dimensions, logger):
+    
     """ Performs voronoi calculations
 
         ### Arguments:
@@ -80,6 +102,7 @@ def voronoi(lands, land_distances, dimensions, logger):
         ### Returns:
             timers<dict>: timers
     """
+    global MAX_THREAD_COUNT
     timers = {}
 
     allcoords = []
@@ -94,6 +117,8 @@ def voronoi(lands, land_distances, dimensions, logger):
     allcoords.extend(centerpoints)
     
     timers['Initial Centerpoint Selection'] = graphics_api.select_top_left_point(centerpoints, logger)
+    centerpoints, timers['Best Permutation Selection'] = graphics_api.calculate_order(centerpoints, N, land_distances, logger, thread_count=MAX_THREAD_COUNT)
+    
 
     return timers
 

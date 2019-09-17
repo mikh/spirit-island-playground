@@ -5,9 +5,10 @@ from timeit import default_timer as timer
 import random
 import threading
 import numpy as np
+from itertools import permutations
 
-PROGRESS_BAR_SIZE = 150
-MAX_THREAD_COUNT = 10
+PROGRESS_BAR_SIZE = 175
+#MAX_THREAD_COUNT = 100
 
 class BoundingRectangle():
     """ Rectangle of dimensions """
@@ -87,8 +88,6 @@ def generate_points(bound, N, max_radius, logger, indent_level=2, existing_point
     for ii in range(N):
         logger.progress(ii/N, "Creating point #{} [{:.2f}s elapsed]...".format(ii, timer()-start_time), indent_level=indent_level, total_size=PROGRESS_BAR_SIZE)
 
-       
-
         placed = False
         while not placed:
             if timer() - start_time > timeout: # timeout
@@ -132,11 +131,23 @@ def select_top_left_point(points, logger, indent_level=2):
     return logger.get_delta("top_left_select")
 
 def calculate_all_distances(points, N):
+    """ Calculates distances between the first N points in points
+
+        ### Arguments:
+            points<list<list<float>>>: points
+            N<int>: number of points
+
+        ### Returns:
+            distances<list<list<float>>>: list of distances
+    """
     distances = np.zeros((N, N))
+    for ii in range(N):
+        for jj in range(N):
+            if ii != jj:
+                distances[ii][jj] = calc_distance(points[ii], points[jj])
+    return distances
 
-
-
-def calculate_order(points, N, adj_D, logger, indent_level=2):
+def calculate_order(points, N, adj_D, logger, indent_level=2, thread_count=10):
     """ Calculates ideal order of points based on adjacency
 
         ### Arguments:  
@@ -150,5 +161,105 @@ def calculate_order(points, N, adj_D, logger, indent_level=2):
             points<dict>: dictionary of points
             elapsed_time<float>: elapsed time
     """
+    def print_permutation(perm):
+        """ Returns string representation of a permutation
 
+            ### Arguments:
+                perm<list<int>>: permutation
+            
+            ### Returns:
+                perm<string>: permutation
+        """
+        return "[{}]".format(", ".join([str(x) for x in perm]))
+    def calculate_permutation_distance(perm, distances, land_distances):
+        """ Calculates the permutation distance
+
+            ### Arguments:
+                perm<list<int>>: permutation
+                distances<list<list<float>>>: distance matrix
+                land_distances<dict<dict<int>>>: adjacency list
+            
+            ### Returns:
+                D<float>: total distance
+        """
+        D = 0
+        for ii in range(len(perm)):
+            P = perm[ii]
+            for eP in land_distances[P]:
+                if land_distances[P][eP] == 1:
+                    D += distances[ii][perm.index(eP)]
+        return D    
+
+    def calculate_order_thread_worker(perms, distances, adj_D, permutation_shortlist):
+        best_distance = np.inf
+        best_permutation = []
+
+        for perm in perms:
+            perm = (0, *perm)
+            distance = calculate_permutation_distance(perm, distances, adj_D)
+            if distance < best_distance:
+                best_distance = distance
+                best_permutation = perm
+        permutation_shortlist.append([best_distance, best_permutation])
+
+    logger.start_section("Calculating optimal order", indent_level=indent_level, timer_name="order")
+
+    logger.start_section("Init calculations", indent_level=indent_level+1, timer_name="order_init")
+    distances = calculate_all_distances(points, N)
+
+    all_perms = list(permutations(range(1, N)))
+    #instance = 0
+    total = len(all_perms)
+    #best_distance = np.inf
+    #best_permutation = []
+    permutation_shortlist = []
+    threads = []
+    logger.end_section(message=" {} permutations to check. ".format(total), timer_name="order_init")
+
+    step_size = int(len(all_perms)/thread_count)
+    for start_index in range(0, len(all_perms), step_size):
+        max_size = min([start_index+step_size, len(all_perms)])
+        logger.progress(start_index/len(all_perms), "Creating thread for range {}-{}...".format(start_index, max_size), total_size=PROGRESS_BAR_SIZE, indent_level=indent_level+1)
+        subperms = all_perms[start_index:max_size]
+        threads.append(threading.Thread(target=calculate_order_thread_worker, args=(subperms, distances, adj_D, permutation_shortlist)))
+    logger.progress(1, "{} threads created.".format(len(threads)), finish=True, indent_level=indent_level+1, total_size=PROGRESS_BAR_SIZE)
+
+    for ii in range(len(threads)):
+        logger.progress(ii/len(threads), "Starting thread {}...".format(ii), total_size=PROGRESS_BAR_SIZE, indent_level=indent_level+1)
+        threads[ii].start()
+    logger.progress(1, "{} threads started.".format(len(threads)), total_size=PROGRESS_BAR_SIZE, indent_level=indent_level+1, finish=True)
+
+    threads_complete = 0
+    while threads_complete < len(threads):
+        threads_complete = 0
+        for thread in threads:
+            if not thread.isAlive():
+                threads_complete += 1
+        logger.progress(threads_complete/len(threads), "{} threads finished.".format(threads_complete), total_size=PROGRESS_BAR_SIZE, indent_level=indent_level+1)
+    logger.progress(1, "All threads finished. {} results.".format(len(permutation_shortlist)), total_size=PROGRESS_BAR_SIZE, indent_level=indent_level+1, finish=True)
+
+    permutation_shortlist.sort(key=lambda x:x[0])
+    best_permutation = permutation_shortlist[0][1]
+
+
+    """
+    for perm in all_perms:
+        perm = (0, *perm)
+        if instance % 100 == 0:
+            logger.progress(instance/total, "Analyzing #{}. Best distance={}. Best Permutation={}".format(instance, best_distance, print_permutation(best_permutation)), total_size=PROGRESS_BAR_SIZE, indent_level=indent_level+1)
+        instance += 1
+        distance = calculate_permutation_distance(perm, distances, adj_D)
+        if distance < best_distance:
+            best_distance = distance
+            best_permutation = perm
+    logger.progress(1, "Finished. Best distance={}. Best Permutation={}".format(best_distance, print_permutation(best_permutation)), total_size=PROGRESS_BAR_SIZE, finish=True, indent_level=indent_level+1)
+
+    """
+
+    new_points = [
+        {'allcoords_index': x, 'assignment': best_permutation[x], 'coords': points[x]} for x in range(N)
+    ]
+
+    logger.end_section(indent_level=indent_level, timer_name="order")
+    return new_points, logger.get_delta("order")
 

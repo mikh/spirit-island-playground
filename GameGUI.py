@@ -128,7 +128,6 @@ def _calculate_order(coords, N, land_distances, logger):
 
     logger.start_section("Init calculations", indent_level=6, timer_name='init_calcs')
     distances = _calculate_distances(coords, N)
-    order = list(range(N))
 
     all_perms = list(permutations(range(1, N)))
     instance = 0 
