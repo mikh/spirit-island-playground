@@ -95,10 +95,12 @@ def generate_points(bound, N, max_radius, logger, indent_level=2, existing_point
             placed = True
 
             C = [random.randint(bound.xmin, bound.xmax), random.randint(bound.ymin, bound.ymax)]
-            for eC in check_points:
-                if calc_distance(eC, C) < max_radius:
+            if len(check_points) > 0:
+                CP = np.array(check_points)
+                D = np.sqrt( np.power(CP[:, 0] - C[0], 2) + np.power(CP[:, 1] - C[1], 2))
+                sD = sum(D[D<max_radius])
+                if sD > 0:
                     placed = False
-                    break
             if placed:
                 points.append(C)
                 check_points.append(C)       
@@ -141,10 +143,16 @@ def calculate_all_distances(points, N):
             distances<list<list<float>>>: list of distances
     """
     distances = np.zeros((N, N))
-    for ii in range(N):
-        for jj in range(N):
-            if ii != jj:
-                distances[ii][jj] = calc_distance(points[ii], points[jj])
+    for ii in range(N-1):
+        C = points[ii]
+        TP = np.array(points[ii+1:N])
+        D = np.sqrt(np.power(TP[:, 0] - C[0], 2) + np.power(TP[:,1] - C[1], 2))
+        distances[ii, ii+1:N] = D
+        distances[ii+1:N, ii] = D
+
+        #for jj in range(ii, N):
+        #    if ii != jj:
+        #        distances[ii][jj] = calc_distance(points[ii], points[jj])
     return distances
 
 def calculate_order(points, N, adj_D, logger, indent_level=2, thread_count=10):
@@ -263,3 +271,29 @@ def calculate_order(points, N, adj_D, logger, indent_level=2, thread_count=10):
     logger.end_section(indent_level=indent_level, timer_name="order")
     return new_points, logger.get_delta("order")
 
+def generate_connection_list(coords, logger, num_connections=8, source_coords=None, existing_connections=None, check_intersections=True, source_coord_exclusivity=False):
+    """ Generates a connection list between source_coords
+
+        ### Arguments:
+            coords<list<list<float>>>: list of coords
+            logger<QuickLogger>: logger
+            num_connections<int>: number of connections to use
+            source_coords<list<int>>: list of indices of coords to connect. If None, connects all coords
+            existing_connections<list<list<int>>>: list of connections to check against
+            check_intersections<boolean>: if True, makes sure no connections intersect
+            source_coord_exclusivity<boolean>: if True, source coords can't connect to each other
+        
+        ### Returns:
+
+    """
+    intersected_connections = 0
+    connection_list = []
+    check_connections = []
+    if existing_connections is not None:
+        check_connections = existing_connections.copy()
+    distances = calculate_all_distances(coords, len(coords))
+    source = range(len(coords))
+    if source_coords is not None:
+        source = source_coords
+
+    

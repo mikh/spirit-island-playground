@@ -1,16 +1,135 @@
 # Functions responsible for creating graphics representations
 
 import graphics_api
+from Digital_Library.lib import log_lib
 
 PADDING = 100
 TIMER_TEST = True
 TIMING_ITERATIONS = 20
 
+PERMUTATION_THREADS = 2
+
 THREAD_COUNT_TEST = True
 MIN_THREADS = 1
 MAX_THREADS = 100
+PERMUTATION_THREADS_TO_TEST = [1,2,3,4,5, 7, 10, 15, 25, 50, 100]   #range(MIN_THREADS, MAX_THREADS)
 
 CENTERPOINT_RADIUS_OFFSET = 25
+
+NUM_SUBPOINTS = 700
+SUBPOINT_RADIUS = 20
+
+PERMUTATION_TIMER_NAME = 'Best Permutation Selection'
+REPORT_NAME = "Spirit-Island-Playground\\Performance Tuning"
+
+def perform_timing_iterations(board, land_distances, width, height, logger, num_permutation_threads=PERMUTATION_THREADS):
+    """ Performs timing iterations
+
+        ### Arguments:
+            board<board>: board to generate
+            land_distances<dict>: mapping of distances between lands
+            width<float>: width
+            height<float>: height
+            logger<QuickLogger>: logger
+            num_permutation_threads<int>: number of permutation threads to use
+        
+        ### Returns:
+            all_timers<dict>: timer output
+            failure_rate<float>: Percentage failure
+            failure_messages<dict>: failure messages
+    """
+    all_timers = {}
+    failure_rate = 0
+    failure_messages = {}
+
+    iteration_count = 1
+    if TIMER_TEST:
+        iteration_count = TIMING_ITERATIONS
+    for _ in range(iteration_count):
+        timers = voronoi(board.lands, land_distances, (width, height), logger, permutation_threads=num_permutation_threads)
+        if not isinstance(timers, dict):
+            failure_rate += 1
+            if not timers in failure_messages:
+                failure_messages[timers] = 0
+            failure_messages[timers] += 1
+        else:
+            for timer in timers:
+                if not timer in all_timers:
+                    all_timers[timer] = 0
+                all_timers[timer] += timers[timer]
+    for t in all_timers:
+        all_timers[t] /= iteration_count
+    return all_timers, failure_rate/iteration_count, failure_messages
+
+def generate_general_report(all_timers, failure_rate, failure_messages):
+    """ Generates a general report 
+
+        ### Arguments:
+            all_timers<dict>: dicionary of timers
+            failure_rate<float>: number of failures
+            failure_messages<dict>: failure messages and their counts
+    """
+    report = log_lib.ReportGenerator(REPORT_NAME)
+    report.set_title("General Timing Test on {timestamp}", add_timestamp=True)
+
+    report.add_break("Results")
+    for t in all_timers:
+        report.add_result(t, "{:.2f}s".format(all_timers[t]))
+    report.add_result("Success Rate", "{:.2%}".format(1 - failure_rate))
+
+    if len(failure_messages) > 0:
+        report.add_break("Failure Messages")
+        for message in failure_messages:
+            report.add_result(message, str(failure_messages[message]))
+    report.save()
+
+
+    
+
+
+def perform_permutation_thread_test(board, land_distances, width, height, logger):
+    """ Performs the thread test for permutations
+
+        ### Arguments:
+            board<board>: board to generate
+            land_distances<dict>: mapping of distances between lands
+            width<float>: width
+            height<float>: height
+            logger<QuickLogger>: logger
+
+    """
+    thread_timers = {}
+    for thread_count in PERMUTATION_THREADS_TO_TEST:
+        timers, failure_rate, failure_messages = perform_timing_iterations(board, land_distances, width, height, logger, num_permutation_threads=thread_count)
+        thread_timers[thread_count] = {'timers': timers[PERMUTATION_TIMER_NAME], 'failure_rate': failure_rate, 'failure_messages': failure_messages}
+
+    report = log_lib.ReportGenerator(REPORT_NAME)
+    report.set_title("Permutation Timing Test on {timestamp}", add_timestamp=True)
+
+    failure_messages = {}
+
+    report.add_break("Results")
+    for t in PERMUTATION_THREADS_TO_TEST:
+        result = thread_timers[t]
+        s = '{:.2f}s'.format(result['timers'])
+        if result['failure_rate'] > 0:
+            s += " [Failure Rate: {:.2%}]".format(result['failure_rate'])
+        report.add_result(t, s)
+        if len(result['failure_messages']) > 0:
+            for message in result['failure_messages']:
+                if not message in failure_messages:
+                    failure_messages[message] = 0
+                failure_messages[message] += result['failure_messages'][message]
+    
+    if len(failure_messages) > 0:
+        report.add_break("Failure Messages")
+        for message in failure_messages:
+            report.add_result(message, str(failure_messages[message]))
+    report.save()
+    
+    
+
+    
 
 def voronoi_generation(width, height, logger, boards):
     """ Creates graphics image in vornoi style
@@ -29,67 +148,15 @@ def voronoi_generation(width, height, logger, boards):
         board = boards[board_letter]
         land_distances = board.get_land_distances()
 
-        if THREAD_COUNT_TEST:
-            global MAX_THREAD_COUNT
-            thread_timers = {}
-            for MAX_THREAD_COUNT in range(MIN_THREADS, MAX_THREADS):
-
-
-                if TIMER_TEST:
-                    all_timers = {}
-                    failure_rate = 0
-                    failure_messages = {}
-                    for _ in range(TIMING_ITERATIONS):
-                        timers = voronoi(board.lands, land_distances, (width, height), logger)
-                        if not isinstance(timers, dict):
-                            failure_rate += 1
-                            if not timers in failure_messages:
-                                failure_messages[timers] = 0
-                            failure_messages[timers] += 1
-                        else:
-                            for timer in timers:
-                                if not timer in all_timers:
-                                    all_timers[timer] = 0
-                                all_timers[timer] += timers[timer]
-
-                    print("\n\n")
-                    print("-"*60)
-                    print("Timing Test Results:")
-                    print("")
-                    if len(failure_messages) > 0:
-                        print("\tFailures:")
-                        print("")
-                        print("\t\tFailure Rate: {:.2%}".format(failure_rate/TIMING_ITERATIONS))
-                        for failure_message in failure_messages:
-                            print("\t\t{} : {}".format(failure_message, failure_messages[failure_message]))
-
-                        print("\n\n")
-                    print("\tTiming Stats:")
-                    print("")
-                    for timer in all_timers:
-                        print("\t\t{} : {:.2f}s".format(timer, all_timers[timer]/TIMING_ITERATIONS))
-                    print("\n")
-                    print("-"*60)
-                    print("\n\n")
-                    thread_timers[MAX_THREAD_COUNT] = all_timers['Best Permutation Selection']
-            print("\n\n")
-            print("*"*60)
-            print("Thread timings:")
-            full = []
-            for ii in range(MIN_THREADS, MAX_THREADS):
-                full.append([ii, thread_timers[ii]])
-                print("\t{} : {:.2f}s".format(ii, thread_timers[ii]))
-            full.sort(key=lambda x:x[1])
-            print("Best thread number: {} at {:.2f}s".format(full[0][0], full[0][1]))
-        
-        else:
-            voronoi(board.lands, land_distances, (width, height), logger)
+        #perform_permutation_thread_test(board, land_distances, width, height, logger)
+        timers, failure_rate, failure_messages = perform_timing_iterations(board, land_distances, width, height, logger)
+        generate_general_report(timers, failure_rate, failure_messages)
 
         logger.end_section(timer_name='single_board_gen', indent_level=1)
     logger.end_section(timer_name="full_gen")
 
 
-def voronoi(lands, land_distances, dimensions, logger):
+def voronoi(lands, land_distances, dimensions, logger, permutation_threads=PERMUTATION_THREADS):
     
     """ Performs voronoi calculations
 
@@ -102,7 +169,6 @@ def voronoi(lands, land_distances, dimensions, logger):
         ### Returns:
             timers<dict>: timers
     """
-    global MAX_THREAD_COUNT
     timers = {}
 
     allcoords = []
@@ -117,8 +183,12 @@ def voronoi(lands, land_distances, dimensions, logger):
     allcoords.extend(centerpoints)
     
     timers['Initial Centerpoint Selection'] = graphics_api.select_top_left_point(centerpoints, logger)
-    centerpoints, timers['Best Permutation Selection'] = graphics_api.calculate_order(centerpoints, N, land_distances, logger, thread_count=MAX_THREAD_COUNT)
+    centerpoints, timers['Best Permutation Selection'] = graphics_api.calculate_order(centerpoints, N, land_distances, logger, thread_count=permutation_threads)
     
+    boundSubpoints = graphics_api.make_bounding_rectangle(dimensions, int(PADDING/2))
+    subpoints, timers['Generate SubPoints'] = graphics_api.generate_points(boundSubpoints, NUM_SUBPOINTS, SUBPOINT_RADIUS, logger, existing_points=allcoords)
+    if subpoints is None:
+        return "Failed to generate subpoints"
 
     return timers
 
