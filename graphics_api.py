@@ -271,7 +271,86 @@ def calculate_order(points, N, adj_D, logger, indent_level=2, thread_count=10):
     logger.end_section(indent_level=indent_level, timer_name="order")
     return new_points, logger.get_delta("order")
 
-def generate_connection_list(coords, logger, num_connections=8, source_coords=None, existing_connections=None, check_intersections=True, source_coord_exclusivity=False):
+def check_intersection(S1, S2):
+    """ Checks if two line segments intersect
+        https://stackoverflow.com/questions/3838329/how-can-i-check-if-two-segments-intersect
+        https://martin-thoma.com/how-to-check-if-two-line-segments-intersect/
+
+        ### Arguments:
+            S1<list<list<int>>>: first segment
+            S2<list<list<int>>>: second segment
+
+        ### Returns:
+            intersect<boolean>: True if they intersect
+    """
+    X1 = S1[0][0]
+    Y1 = S1[0][1]
+    X2 = S1[1][0]
+    Y2 = S1[1][1]
+    X3 = S2[0][0]
+    Y3 = S2[0][1]
+    X4 = S2[1][0]
+    Y4 = S2[1][1]
+
+    minP1 = (min([X1, X2]), min([Y1, Y2]))
+    maxP1 = (max([X1, X2]), max([Y1, Y2]))
+    minP2 = (min([X3, X4]), min([Y3, Y4]))
+    maxP2 = (max([X3, X4]), max([Y3, Y4]))
+
+    if (S1[0] == S2[0] and S1[1] == S2[1]) or (S1[0] == S2[1] and S1[1] == S2[0]):
+        return True
+    elif S1[0] in S2 or S1[1] in S2:
+        return False
+
+    if maxP1[0] < minP2[0] or maxP2[0] < minP1[0] or maxP1[1] < minP2[1] or maxP2[1] < minP1[1]:
+        return False
+    
+    DX1 = X1-X2
+    DX2 = X3-X4
+
+    if DX1 == 0 or DX2 == 0:
+        if DX1 == DX2:
+            return True
+        if DX1 == 0:
+            Xmatch = X1
+            A = (Y3-Y4)/DX2
+            b = Y3 - (A*X3)
+            Yrange = [minP1[1], maxP1[1]]
+        elif DX2 == 0:
+            Xmatch = X3    
+            A = (Y1-Y2)/DX1
+            b = Y1 - (A*X1)
+            Yrange = [minP2[1], maxP2[1]]
+        Ymatch = A*Xmatch + b
+        if Ymatch > Yrange[0] and Ymatch < Yrange[1]:
+            return True
+        return False
+    else:
+        A1 = (Y1-Y2)/DX1
+        A2 = (Y3-Y4)/DX2
+        b1 = Y1 - (A1*X1)
+        b2 = Y3 - (A2*X3)
+        if A1 == A2:
+            if b1 == b2:
+                return True
+            return False
+
+        Xa = (b2-b1) / (A1-A2)
+        if Xa < max([min([X1, X2]), min([X3, X4])]) or Xa > min([max([X1, X2]), max([X3, X4])]):
+            return False
+        else:
+            return True
+
+
+def matches_any_connection(C, connection_list, coords):
+    """ Checks if there is a match against any connection"""
+    f_new_l = [coords[C[0]], coords[C[1]]]
+    for e_l in connection_list:
+        if check_intersection(f_new_l, [coords[e_l[0]], coords[e_l[1]]]):
+            return True
+    return False
+
+def generate_connection_list(coords, logger, num_connections=8, source_coords=None, existing_connections=None, check_intersections=True, source_coord_exclusivity=False, indent_level=2):
     """ Generates a connection list between source_coords
 
         ### Arguments:
@@ -284,16 +363,37 @@ def generate_connection_list(coords, logger, num_connections=8, source_coords=No
             source_coord_exclusivity<boolean>: if True, source coords can't connect to each other
         
         ### Returns:
-
+            connection_list<list>: list of connections
+            elapsed_time<float>: elapsed time
     """
     intersected_connections = 0
     connection_list = []
-    check_connections = []
-    if existing_connections is not None:
-        check_connections = existing_connections.copy()
+    if existing_connections is not None:  
+        connection_list = existing_connections.copy()
     distances = calculate_all_distances(coords, len(coords))
     source = range(len(coords))
     if source_coords is not None:
         source = source_coords
 
-    
+    start_time = timer()
+    instance = 0
+    total = len(source)
+    for P in source:
+        logger.progress(instance/total, "Generating edges for {}. {} cc. {} ic. [{:.2f}s elapsed]".format(P, len(connection_list), intersected_connections, timer() - start_time), indent_level=indent_level, total_size=PROGRESS_BAR_SIZE)
+        D = distances[P, :]
+        E = sorted([[D[ii], ii] for ii in range(len(D))], key=lambda x:x[0])
+        connections_obtained = 0
+        ii = 1
+        while connections_obtained < num_connections:
+            if not source_coord_exclusivity or not E[ii][1] in source:
+                C = sorted([P, E[ii][1]])
+                if not C in connection_list:
+                    if not check_intersections or not matches_any_connection(C, connection_list, coords):
+                        connection_list.append(C)
+                    else:
+                        intersected_connections += 1
+                connections_obtained += 1
+            ii += 1
+    logger.progress(1, "Edges generated. {} cc total. {} ic total. [{:.2f}s elapsed]".format(len(connection_list), intersected_connections, timer() - start_time), indent_level=indent_level, total_size=PROGRESS_BAR_SIZE, finish=True)
+    return connection_list, timer() - start_time
+

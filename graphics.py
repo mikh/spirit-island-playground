@@ -189,6 +189,9 @@ def voronoi(lands, land_distances, dimensions, logger, permutation_threads=PERMU
     subpoints, timers['Generate SubPoints'] = graphics_api.generate_points(boundSubpoints, NUM_SUBPOINTS, SUBPOINT_RADIUS, logger, existing_points=allcoords)
     if subpoints is None:
         return "Failed to generate subpoints"
+    allcoords.extend(subpoints)
+    connection_list, timers['Centerpoint Connections'] = graphics_api.generate_connection_list(allcoords, logger, source_coords=range(len(centerpoints)))
+    connection_list, timers['Subpoint connections'] = graphics_api.generate_connection_list(allcoords, logger, num_connections=4, source_coords=range(len(centerpoints), len(allcoords)), existing_connections=connection_list)
 
     return timers
 
